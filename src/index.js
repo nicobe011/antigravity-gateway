@@ -10,14 +10,11 @@ import readline from 'readline';
 import app from './server.js';
 import { DEFAULT_PORT } from './constants.js';
 import { logger } from './utils/logger.js';
-import { setOpus55SkillActive, isOpus55SkillEnabled } from './skill-manager.js';
 import { renderArrowSelectionMenu, renderFixedDashboardWithLogs } from './utils/terminal-dashboard.js';
 
 const args = process.argv.slice(2);
 const isDebug = args.includes('--debug') || process.env.DEBUG === 'true';
 const isFallbackEnabled = args.includes('--fallback') || process.env.FALLBACK === 'true';
-const hasExplicitSkillFlag = args.includes('--skill-opus55') || args.includes('--opus55');
-const hasExplicitNoSkillFlag = args.includes('--no-skill-opus55') || args.includes('--no-opus55');
 const hasExplicitAccount = args.find(a => a.startsWith('--account='))?.split('=')[1];
 
 logger.setDebug(isDebug);
@@ -220,9 +217,6 @@ function promptInteractiveAccountSelection(accounts, summaries) {
 async function main() {
     const accountManager = app.accountManager;
     await accountManager.initialize();
-
-    // Default skill state
-    setOpus55SkillActive(true);
 
     if (hasExplicitAccount) {
         accountManager.setPinnedAccount(hasExplicitAccount);
