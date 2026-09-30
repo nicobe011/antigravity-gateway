@@ -149,7 +149,11 @@ export const OAUTH_CONFIG = {
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
     userInfoUrl: 'https://www.googleapis.com/oauth2/v1/userinfo',
-    callbackPort: 51121,
+    // Allow override via OAUTH_CALLBACK_PORT env var (useful on Windows
+    // when the default port is blocked/reserved by Hyper-V, firewall or AV).
+    // Ex: $env:OAUTH_CALLBACK_PORT=53682; npm run accounts:add
+    callbackPort: parseInt(process.env.OAUTH_CALLBACK_PORT || '51121', 10),
+    callbackHost: process.env.OAUTH_CALLBACK_HOST || '127.0.0.1',
     scopes: [
         'https://www.googleapis.com/auth/cloud-platform',
         'https://www.googleapis.com/auth/userinfo.email',

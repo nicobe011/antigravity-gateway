@@ -34,13 +34,15 @@ function generatePKCE() {
  *
  * @returns {{url: string, verifier: string, state: string}} Auth URL and PKCE data
  */
-export function getAuthorizationUrl() {
+export function getAuthorizationUrl(portOverride) {
     const { verifier, challenge } = generatePKCE();
     const state = crypto.randomBytes(16).toString('hex');
+    const port = portOverride || OAUTH_CONFIG.callbackPort;
+    const redirectUri = `http://localhost:${port}/oauth-callback`;
 
     const params = new URLSearchParams({
         client_id: OAUTH_CONFIG.clientId,
-        redirect_uri: OAUTH_REDIRECT_URI,
+        redirect_uri: redirectUri,
         response_type: 'code',
         scope: OAUTH_CONFIG.scopes.join(' '),
         access_type: 'offline',
@@ -53,7 +55,9 @@ export function getAuthorizationUrl() {
     return {
         url: `${OAUTH_CONFIG.authUrl}?${params.toString()}`,
         verifier,
-        state
+        state,
+        port,
+        redirectUri
     };
 }
 
@@ -115,10 +119,12 @@ export function extractCodeFromInput(input) {
  * @param {number} timeoutMs - Timeout in milliseconds (default 120000)
  * @returns {Promise<string>} Authorization code from OAuth callback
  */
-export function startCallbackServer(expectedState, timeoutMs = 120000) {
+export function startCallbackServer(expectedState, timeoutMs = 120000, portOverride) {
+    const port = portOverride || OAUTH_CONFIG.callbackPort;
+    const host = OAUTH_CONFIG.callbackHost || '127.0.0.1';
     return new Promise((resolve, reject) => {
         const server = http.createServer((req, res) => {
-            const url = new URL(req.url, `http://localhost:${OAUTH_CONFIG.callbackPort}`);
+            const url = new URL(req.url, `http://localhost:${port}`);
 
             if (url.pathname !== '/oauth-callback') {
                 res.writeHead(404);
@@ -199,23 +205,109 @@ export function startCallbackServer(expectedState, timeoutMs = 120000) {
         });
 
         server.on('error', (err) => {
+            // Tag retryable bind errors so the auto-port fallback can try the next port
+            // without showing a scary Defender message for every attempt.
+            if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+                err.retryableBind = true;
+                err.bindPort = port;
+            }
             if (err.code === 'EADDRINUSE') {
-                reject(new Error(`Port ${OAUTH_CONFIG.callbackPort} is already in use. Close any other OAuth flows and try again.`));
+                reject(new Error(`Port ${port} is already in use. Close any other OAuth flows and try again, or set a free port with: $env:OAUTH_CALLBACK_PORT=53682; npm run accounts:add`));
+            } else if (err.code === 'EACCES') {
+                reject(new Error(`Permission denied binding to port ${port} on ${host}. No Windows, isso geralmente é Firewall/antivírus bloqueando o Node.js ou porta reservada pelo Hyper-V. Soluções: 1) Libere o Node.js no Firewall do Windows, 2) Rode uma vez como Administrador, 3) Use outra porta: $env:OAUTH_CALLBACK_PORT=53682; npm run accounts:add, 4) Ou use modo sem callback local: npm run accounts:add -- --no-browser`));
             } else {
                 reject(err);
             }
         });
 
-        server.listen(OAUTH_CONFIG.callbackPort, () => {
-            logger.info(`[OAuth] Callback server listening on port ${OAUTH_CONFIG.callbackPort}`);
+        // Bind explicitly to 127.0.0.1 instead of 0.0.0.0:
+        // on Windows, listening on 0.0.0.0 triggers a Windows Defender Firewall
+        // prompt (and can raise EACCES), while loopback (127.0.0.1) does not
+        // require firewall approval because traffic never leaves the machine.
+        // The redirect_uri still uses http://localhost:PORT which resolves to loopback.
+        server.listen(port, host, () => {
+            logger.info(`[OAuth] Callback server listening on ${host}:${port} (loopback only, no firewall prompt expected)`);
         });
 
         // Timeout after specified duration
-        setTimeout(() => {
-            server.close();
-            reject(new Error('OAuth callback timeout - no response received'));
+        const timer = setTimeout(() => {
+            try { server.close(); } catch { /* ignore */ }
+            const err = new Error('OAuth callback timeout - no response received');
+            err.timedOut = true;
+            reject(err);
         }, timeoutMs);
+        // Don't let the timer keep the process alive after success/error
+        if (timer.unref) timer.unref();
     });
+}
+
+/**
+ * Candidate loopback ports for the OAuth callback server.
+ * The first entry is the configured port (default 51121 or OAUTH_CALLBACK_PORT).
+ * The rest are well-known free high ports used as automatic fallback when
+ * Windows Defender / Hyper-V / antivirus blocks the default one.
+ * Loopback-only binding never leaves the machine, so no firewall rule is needed.
+ */
+export function getCallbackCandidatePorts() {
+    const configured = OAUTH_CONFIG.callbackPort;
+    const fallbacks = [53682, 49152, 54321, 62000, 63000];
+    return [...new Set([configured, ...fallbacks])];
+}
+
+/**
+ * Start the full OAuth browser flow with automatic port fallback.
+ * Generates one PKCE/verifier+state pair, then tries each candidate port:
+ * builds the Google URL with that port's redirect_uri and binds loopback-only.
+ * Resolves with { url, verifier, state, port, waitForCode } — call waitForCode()
+ * after opening the browser. This avoids EACCES/EADDRINUSE crashes and avoids
+ * Windows Defender prompts (no 0.0.0.0 binding, no inbound rule needed).
+ *
+ * @param {number} timeoutMs - Timeout per callback wait (default 120000)
+ */
+export async function startAuthFlowWithFallback(timeoutMs = 120000) {
+    const { verifier, challenge } = generatePKCE();
+    const state = crypto.randomBytes(16).toString('hex');
+    const errors = [];
+
+    for (const port of getCallbackCandidatePorts()) {
+        const params = new URLSearchParams({
+            client_id: OAUTH_CONFIG.clientId,
+            redirect_uri: `http://localhost:${port}/oauth-callback`,
+            response_type: 'code',
+            scope: OAUTH_CONFIG.scopes.join(' '),
+            access_type: 'offline',
+            prompt: 'consent',
+            code_challenge: challenge,
+            code_challenge_method: 'S256',
+            state
+        });
+        const url = `${OAUTH_CONFIG.authUrl}?${params.toString()}`;
+
+        // Probe: can we bind loopback on this port?
+        const bindable = await new Promise((resolve) => {
+            const probe = http.createServer(() => {});
+            probe.on('error', () => { try { probe.close(); } catch {} resolve(false); });
+            probe.listen(port, OAUTH_CONFIG.callbackHost || '127.0.0.1', () => {
+                probe.close(() => resolve(true));
+            });
+        });
+
+        if (!bindable) {
+            errors.push(`port ${port} blocked (EACCES/EADDRINUSE)`);
+            continue;
+        }
+
+        return {
+            url, verifier, state, port,
+            redirectUri: `http://localhost:${port}/oauth-callback`,
+            waitForCode: () => startCallbackServer(state, timeoutMs, port)
+        };
+    }
+
+    throw new Error(
+        `Nenhuma porta loopback disponível (${errors.join('; ')}). ` +
+        `O Windows Defender/Hyper-V bloqueou todas as tentativas. Use: npm run accounts:add -- --no-browser`
+    );
 }
 
 /**
@@ -223,9 +315,13 @@ export function startCallbackServer(expectedState, timeoutMs = 120000) {
  *
  * @param {string} code - Authorization code from OAuth callback
  * @param {string} verifier - PKCE code verifier
+ * @param {string} [redirectUri] - MUST be byte-identical to the redirect_uri used
+ *   in the authorization URL, or Google returns redirect_uri_mismatch.
+ *   Defaults to OAUTH_REDIRECT_URI (configured port) for backward compatibility.
  * @returns {Promise<{accessToken: string, refreshToken: string, expiresIn: number}>} OAuth tokens
  */
-export async function exchangeCode(code, verifier) {
+export async function exchangeCode(code, verifier, redirectUri) {
+    const usedRedirectUri = redirectUri || OAUTH_REDIRECT_URI;
     const response = await fetch(OAUTH_CONFIG.tokenUrl, {
         method: 'POST',
         headers: {
@@ -237,13 +333,23 @@ export async function exchangeCode(code, verifier) {
             code: code,
             code_verifier: verifier,
             grant_type: 'authorization_code',
-            redirect_uri: OAUTH_REDIRECT_URI
+            redirect_uri: usedRedirectUri
         })
     });
 
     if (!response.ok) {
         const error = await response.text();
         logger.error(`[OAuth] Token exchange failed: ${response.status} ${error}`);
+        if (error.includes('redirect_uri_mismatch')) {
+            throw new Error(
+                `Token exchange failed (redirect_uri_mismatch). ` +
+                `O redirect_uri da troca (${usedRedirectUri}) precisa ser idêntico ao da autorização ` +
+                `e estar registrado no Google Cloud Console para esse client_id. ` +
+                `Se você usou porta de fallback (ex: 53682) com o client_id embutido (registrado só p/ 51121), ` +
+                `libere a porta 51121 (npm run firewall:setup) ou use: npm run accounts:add -- --no-browser. ` +
+                `Detalhe: ${error}`
+            );
+        }
         throw new Error(`Token exchange failed: ${error}`);
     }
 
@@ -366,11 +472,12 @@ export async function discoverProjectId(accessToken) {
  *
  * @param {string} code - Authorization code from OAuth callback
  * @param {string} verifier - PKCE code verifier
+ * @param {string} [redirectUri] - Must match the authorization URL's redirect_uri
  * @returns {Promise<{email: string, refreshToken: string, accessToken: string, projectId: string|null}>} Complete account info
  */
-export async function completeOAuthFlow(code, verifier) {
-    // Exchange code for tokens
-    const tokens = await exchangeCode(code, verifier);
+export async function completeOAuthFlow(code, verifier, redirectUri) {
+    // Exchange code for tokens (redirect_uri must equal the authorize one)
+    const tokens = await exchangeCode(code, verifier, redirectUri);
 
     // Get user email
     const email = await getUserEmail(tokens.accessToken);
@@ -390,6 +497,8 @@ export default {
     getAuthorizationUrl,
     extractCodeFromInput,
     startCallbackServer,
+    startAuthFlowWithFallback,
+    getCallbackCandidatePorts,
     exchangeCode,
     refreshAccessToken,
     getUserEmail,

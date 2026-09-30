@@ -23,6 +23,7 @@ import { ACCOUNT_CONFIG_PATH, DEFAULT_PORT, MAX_ACCOUNTS } from '../constants.js
 import {
     getAuthorizationUrl,
     startCallbackServer,
+    startAuthFlowWithFallback,
     completeOAuthFlow,
     refreshAccessToken,
     getUserEmail,
@@ -92,7 +93,11 @@ function openBrowser(url) {
     if (platform === 'darwin') {
         command = `open "${url}"`;
     } else if (platform === 'win32') {
-        command = `start "" "${url}"`;
+        // `start` is a cmd.exe builtin — must go through cmd /c, otherwise
+        // exec() fails silently and the user never sees the browser.
+        // Loopback redirect (127.0.0.1) never leaves the machine, so this
+        // does not trigger a Windows Defender Firewall prompt.
+        command = `cmd /c start "" "${url}"`;
     } else {
         command = `xdg-open "${url}"`;
     }
@@ -183,12 +188,23 @@ function displayAccounts(accounts) {
 async function addAccount(existingAccounts) {
     console.log('\n=== Add Google Account ===\n');
 
-    // Generate authorization URL
-    const { url, verifier, state } = getAuthorizationUrl();
+    // Auto-port fallback: tries 51121 (or OAUTH_CALLBACK_PORT) then
+    // 53682, 49152, ... — all loopback-only (127.0.0.1), so Windows Defender
+    // Firewall does NOT prompt (traffic never leaves the machine).
+    // The Google URL is built with the port that actually bound successfully.
+    let flow;
+    try {
+        flow = await startAuthFlowWithFallback();
+    } catch (error) {
+        console.error(`\n✗ Authentication failed: ${error.message}`);
+        return null;
+    }
+    const { url, verifier, state, port, redirectUri, waitForCode } = flow;
 
     console.log('Opening browser for Google sign-in...');
     console.log('(If browser does not open, copy this URL manually)\n');
     console.log(`   ${url}\n`);
+    console.log(`   (callback local: http://localhost:${port}/oauth-callback — somente loopback, sem alerta do Firewall)\n`);
 
     // Open browser
     openBrowser(url);
@@ -197,10 +213,10 @@ async function addAccount(existingAccounts) {
     console.log('Waiting for authentication (timeout: 2 minutes)...\n');
 
     try {
-        const code = await startCallbackServer(state);
+        const code = await waitForCode();
 
         console.log('Received authorization code. Exchanging for tokens...');
-        const result = await completeOAuthFlow(code, verifier);
+        const result = await completeOAuthFlow(code, verifier, redirectUri);
 
         // Check if account already exists
         const existing = existingAccounts.find(a => a.email === result.email);
@@ -238,7 +254,7 @@ async function addAccountNoBrowser(existingAccounts, rl) {
     console.log('\n=== Add Google Account (No-Browser Mode) ===\n');
 
     // Generate authorization URL
-    const { url, verifier, state } = getAuthorizationUrl();
+    const { url, verifier, state, redirectUri } = getAuthorizationUrl();
 
     console.log('Copy the following URL and open it in a browser on another device:\n');
     console.log(`   ${url}\n`);
@@ -257,7 +273,7 @@ async function addAccountNoBrowser(existingAccounts, rl) {
         }
 
         console.log('\nExchanging authorization code for tokens...');
-        const result = await completeOAuthFlow(code, verifier);
+        const result = await completeOAuthFlow(code, verifier, redirectUri);
 
         // Check if account already exists
         const existing = existingAccounts.find(a => a.email === result.email);

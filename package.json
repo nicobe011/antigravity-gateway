@@ -20,6 +20,7 @@
     "accounts:list": "node src/cli/accounts.js list",
     "accounts:remove": "node src/cli/accounts.js remove",
     "accounts:verify": "node src/cli/accounts.js verify",
+    "firewall:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-windows-firewall.ps1",
     "test": "node tests/run-all.cjs",
     "test:claude": "node tests/test-claude-model-mapping.cjs",
     "test:native": "node tests/test-claude-native-format.cjs",
