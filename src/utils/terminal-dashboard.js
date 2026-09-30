@@ -2,7 +2,7 @@
  * Terminal UI Dashboard for Antigravity Gateway
  * Renders a rich, modern console interface directly in the terminal (CMD/PowerShell)
  * Displays Weekly Limit Remaining and Five Hour Limit Remaining from official Antigravity quota API.
- * Keeps a fixed dashboard viewport with a scrollable 8-line live request log.
+ * Keeps a fixed dashboard viewport with a scrollable 10-line request feed.
  */
 
 // ANSI Color Codes
@@ -30,16 +30,7 @@ export const C = {
     brightBlue: '\x1b[94m',
     brightMagenta: '\x1b[95m',
     brightCyan: '\x1b[96m',
-    brightWhite: '\x1b[97m',
-
-    // Cursor / Screen control
-    cursorUp: (n = 1) => `\x1b[${n}A`,
-    cursorDown: (n = 1) => `\x1b[${n}B`,
-    cursorTo: (x = 0, y = 0) => `\x1b[${y + 1};${x + 1}H`,
-    clearScreen: '\x1b[2J\x1b[0;0H',
-    clearLine: '\x1b[2K\r',
-    hideCursor: '\x1b[?25l',
-    showCursor: '\x1b[?25h'
+    brightWhite: '\x1b[97m'
 };
 
 /**
@@ -83,7 +74,7 @@ export function renderArrowSelectionMenu(data) {
     const lines = [];
 
     lines.push(`${C.brightMagenta}╔══════════════════════════════════════════════════════════════════════════════════╗${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}⚡ ANTIGRAVITY GATEWAY - SELEÇÃO MULTI-CONTAS NO TERMINAL${C.reset}        ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}⚡ ANTIGRAVITY GATEWAY - SELEÇÃO DE CONTA NO TERMINAL${C.reset}            ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}       ${C.cyan}Navegue com [↑ / ↓] e tecle [ENTER] ou digite o número da conta${C.reset}            ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}╚══════════════════════════════════════════════════════════════════════════════════╝${C.reset}`);
     lines.push('');
@@ -91,20 +82,13 @@ export function renderArrowSelectionMenu(data) {
     lines.push(`${C.bold}${C.brightCyan}📊 COTAS E LIMITES REAIS DO ANTIGRAVITY:${C.reset}`);
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
 
-    // Option 0: Multi-account intelligent mode
-    const isMultiSelected = selectedIndex === 0;
-    const multiPrefix = isMultiSelected ? `${C.brightGreen}${C.bold} ► [0] ` : `   [0] `;
-    lines.push(`${multiPrefix}${C.bold}⚡ MODO MULTI-CONTAS INTELIGENTE${C.reset} ${C.brightGreen}(Recomendado - Rotação Ativa)${C.reset}`);
-    lines.push(`       ${C.dim}Alterna automaticamente entre todas as contas conforme o limite for atingido.${C.reset}`);
-    lines.push('');
-
     // Accounts list
     if (accounts.length === 0) {
         lines.push(`   ${C.yellow}Nenhuma conta configurada. Execute: npm run accounts:add${C.reset}`);
     } else {
         accounts.forEach((acc, idx) => {
             const accNum = idx + 1;
-            const isSelected = selectedIndex === accNum;
+            const isSelected = selectedIndex === idx;
             const prefix = isSelected ? `${C.brightGreen}${C.bold} ► [${accNum}] ` : `   [${accNum}] `;
             const summary = summaries[idx] || {};
             const weekly = summary.weeklyLimit || {};
@@ -119,7 +103,10 @@ export function renderArrowSelectionMenu(data) {
     }
 
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
-    lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para mover, ${C.bold}ENTER${C.reset}${C.dim} para confirmar, ou digite o número ${C.bold}[0..${accounts.length}]${C.reset}${C.dim}.${C.reset}`);
+    if (accounts.length > 1) {
+        lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para escolher, ${C.bold}ENTER${C.reset}${C.dim} para confirmar, ou digite o número ${C.bold}[1..${accounts.length}]${C.reset}${C.dim}.${C.reset}`);
+    }
+    lines.push(`  ${C.dim}Para trocar de conta depois, basta fechar com ${C.bold}Ctrl+C${C.reset}${C.dim} e reabrir o ${C.bold}npm start${C.reset}${C.dim}.${C.reset}`);
 
     return lines.join('\n');
 }
@@ -133,11 +120,10 @@ export function renderArrowSelectionMenu(data) {
 export function renderFixedDashboardWithLogs(data) {
     const {
         port = 8080,
-        pinnedEmail = null,
+        activeEmail = null,
         fiveHourLimit = {},
         weeklyLimit = {},
         claudeLimits = null,
-        accountsCount = 1,
         recentLogs = [],
         lastRefreshTime = new Date()
     } = data;
@@ -150,18 +136,13 @@ export function renderFixedDashboardWithLogs(data) {
     lines.push(`${C.brightMagenta}║${C.reset}   Porta Local: ${C.brightGreen}http://localhost:${port}${C.reset}                                            ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
 
-    // Mode status
-    if (pinnedEmail) {
-        lines.push(`${C.brightMagenta}║${C.reset}   Modo de Conta: ${C.brightYellow}⭐ Conta Fixada (${pinnedEmail})${C.reset}`);
-    } else {
-        lines.push(`${C.brightMagenta}║${C.reset}   Modo de Conta: ${C.brightGreen}⚡ Multi-Contas Inteligente (${accountsCount} conta(s) com rotação ativa)${C.reset}`);
-    }
-
+    // Mode status - Manual / Fixed to the chosen account
+    lines.push(`${C.brightMagenta}║${C.reset}   Conta Ativa: ${C.brightYellow}⭐ ${activeEmail || 'Padrão'}${C.reset} ${C.dim}(Modo Manual - Zero Rotação)${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}   Modelos Claude: ${C.cyan}claude-opus-4-6-low/medium/high[1m] -> Gemini 3.8 Flash${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
 
     // Gemini Models Section Header
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightCyan}🤖 Modelos Gemini (Gemini Models - Cotas Oficiais em Tempo Real):${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightCyan}🤖 Cotas Oficiais do Antigravity (Gemini Models):${C.reset}`);
 
     // 1. Weekly Limit Remaining
     if (weeklyLimit.remainingPercent !== undefined) {
@@ -185,8 +166,7 @@ export function renderFixedDashboardWithLogs(data) {
 
     const refreshFormatted = lastRefreshTime.toLocaleTimeString('pt-BR');
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Última atualização de cotas: ${refreshFormatted} (atualização automática a cada 30 min)${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Comandos: Ctrl+C para parar.${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Cotas atualizadas: ${refreshFormatted} | Para trocar de conta: feche e reabra o npm start${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightWhite}📋 HISTÓRICO DE REQUISIÇÕES EM TEMPO REAL (Últimas 10):${C.reset}`);
 

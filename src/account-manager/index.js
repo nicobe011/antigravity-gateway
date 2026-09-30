@@ -1,7 +1,8 @@
 /**
  * Account Manager
- * Manages multiple Antigravity accounts with sticky selection,
- * automatic failover, and smart cooldown for rate-limited accounts.
+ * Manages Antigravity accounts.
+ * Multi-account selection is manual on startup: the selected account stays fixed.
+ * No automatic account switching during runtime.
  */
 
 import { ACCOUNT_CONFIG_PATH } from '../constants.js';
@@ -22,12 +23,6 @@ import {
     clearProjectCache as clearProject,
     clearTokenCache as clearToken
 } from './credentials.js';
-import {
-    pickNext as selectNext,
-    getCurrentStickyAccount as getSticky,
-    shouldWaitForCurrentAccount as shouldWait,
-    pickStickyAccount as selectSticky
-} from './selection.js';
 import { fetchAvailableModels, retrieveUserQuotaSummary } from '../cloudcode/model-api.js';
 import { parseAccountQuotaSummary } from '../utils/quota-formatter.js';
 import { logger } from '../utils/logger.js';
@@ -38,7 +33,7 @@ export class AccountManager {
     #configPath;
     #settings = {};
     #initialized = false;
-    #pinnedEmail = null; // When set, gateway uses strictly this account
+    #selectedAccount = null;
 
     // Per-account caches
     #tokenCache = new Map(); // email -> { token, extractedAt }
@@ -68,6 +63,12 @@ export class AccountManager {
             this.#tokenCache = tokenCache;
         }
 
+        // Set default active account to activeIndex
+        if (this.#accounts.length > 0) {
+            const idx = Math.min(this.#currentIndex, this.#accounts.length - 1);
+            this.#selectedAccount = this.#accounts[idx];
+        }
+
         // Clear any expired rate limits
         this.clearExpiredLimits();
 
@@ -88,6 +89,13 @@ export class AccountManager {
      * @returns {boolean} True if all accounts are rate-limited
      */
     isAllRateLimited(modelId = null) {
+        if (this.#selectedAccount) {
+            if (modelId && this.#selectedAccount.modelRateLimits && this.#selectedAccount.modelRateLimits[modelId]) {
+                const limit = this.#selectedAccount.modelRateLimits[modelId];
+                return limit.isRateLimited && limit.resetTime > Date.now();
+            }
+            return false;
+        }
         return checkAllRateLimited(this.#accounts, modelId);
     }
 
@@ -97,6 +105,9 @@ export class AccountManager {
      * @returns {Array<Object>} Array of available account objects
      */
     getAvailableAccounts(modelId = null) {
+        if (this.#selectedAccount) {
+            return [this.#selectedAccount];
+        }
         return getAvailable(this.#accounts, modelId);
     }
 
@@ -122,7 +133,6 @@ export class AccountManager {
 
     /**
      * Clear all rate limits to force a fresh check
-     * (Optimistic retry strategy)
      * @returns {void}
      */
     resetAllRateLimits() {
@@ -130,72 +140,86 @@ export class AccountManager {
     }
 
     /**
-     * Set a specific account to use strictly (pin account)
-     * Pass null, '', or 'auto' to revert to intelligent multi-account mode
+     * Manually select an account to use for the session.
+     * Stored in memory and activeIndex saved to disk.
+     * NO automatic switching during runtime.
      *
-     * @param {string|number|null} emailOrIndex - Account email, index, or null for auto
-     * @returns {Object|null} The pinned account or null if auto mode
+     * @param {string|number|null} emailOrIndex - Account email or index
+     * @returns {Object|null} The selected account
      */
-    setPinnedAccount(emailOrIndex) {
-        if (emailOrIndex === null || emailOrIndex === undefined || emailOrIndex === '' || emailOrIndex === 'auto') {
-            this.#pinnedEmail = null;
-            logger.info('[AccountManager] Modo Multi-Contas Inteligente ATIVADO (rotação e failover automáticos).');
-            return null;
-        }
-
+    selectAccount(emailOrIndex) {
         let target = null;
+        let newIndex = 0;
+
         if (typeof emailOrIndex === 'number') {
-            target = this.#accounts[emailOrIndex] || null;
+            newIndex = Math.max(0, Math.min(emailOrIndex, this.#accounts.length - 1));
+            target = this.#accounts[newIndex] || null;
         } else if (typeof emailOrIndex === 'string') {
             const trimmed = emailOrIndex.trim().toLowerCase();
-            target = this.#accounts.find(a => a.email.toLowerCase() === trimmed || a.email.toLowerCase().startsWith(trimmed)) || null;
+            const idx = this.#accounts.findIndex(a =>
+                a.email.toLowerCase() === trimmed || a.email.toLowerCase().startsWith(trimmed)
+            );
+            if (idx !== -1) {
+                newIndex = idx;
+                target = this.#accounts[idx];
+            }
         }
 
         if (target) {
-            this.#pinnedEmail = target.email;
-            logger.info(`[AccountManager] Conta fixada com sucesso: ${target.email}`);
+            this.#selectedAccount = target;
+            this.#currentIndex = newIndex;
+            this.saveToDisk();
+            logger.info(`[AccountManager] Conta ativa selecionada: ${target.email}`);
             return target;
-        } else {
-            logger.warn(`[AccountManager] Conta não encontrada para fixação: ${emailOrIndex}. Mantendo modo atual.`);
-            return this.getPinnedAccount();
         }
+
+        if (this.#accounts.length > 0) {
+            this.#selectedAccount = this.#accounts[0];
+            this.#currentIndex = 0;
+            return this.#selectedAccount;
+        }
+
+        return null;
     }
 
     /**
-     * Get the currently pinned account, if any
-     * @returns {Object|null} Pinned account object or null if in multi-account mode
+     * Set pinned account (alias for selectAccount for compatibility)
      */
+    setPinnedAccount(emailOrIndex) {
+        return this.selectAccount(emailOrIndex);
+    }
+
+    /**
+     * Get the currently active selected account
+     * @returns {Object|null}
+     */
+    getSelectedAccount() {
+        if (!this.#selectedAccount && this.#accounts.length > 0) {
+            const idx = Math.min(this.#currentIndex, this.#accounts.length - 1);
+            this.#selectedAccount = this.#accounts[idx];
+        }
+        return this.#selectedAccount;
+    }
+
     getPinnedAccount() {
-        if (!this.#pinnedEmail) return null;
-        return this.#accounts.find(a => a.email === this.#pinnedEmail) || null;
+        return this.getSelectedAccount();
     }
 
-    /**
-     * Get the email of the currently pinned account
-     * @returns {string|null} Pinned email or null
-     */
     getPinnedAccountEmail() {
-        return this.#pinnedEmail;
+        return this.getSelectedAccount()?.email || null;
     }
 
-    /**
-     * Check if a specific account is currently pinned
-     * @returns {boolean} True if pinned to a single account
-     */
     isPinned() {
-        return !!this.#pinnedEmail;
+        return true; // Always manual/fixed to the chosen account
     }
 
     /**
      * Fetch real-time quota summary (5-Hour Limit and Weekly Limit) for an account
-     *
-     * @param {Object|string|null} [accountOrEmail] - Account object or email (defaults to active account)
-     * @returns {Promise<Object>} Formatted quota summary
      */
     async getAccountQuotaSummary(accountOrEmail = null) {
         let account = null;
         if (!accountOrEmail) {
-            account = this.getPinnedAccount() || this.getCurrentStickyAccount() || this.#accounts[0];
+            account = this.getSelectedAccount() || this.#accounts[0];
         } else if (typeof accountOrEmail === 'string') {
             account = this.#accounts.find(a => a.email === accountOrEmail) || null;
         } else {
@@ -236,102 +260,83 @@ export class AccountManager {
     }
 
     /**
-     * Pick the next available account (fallback when current is unavailable).
-     * Sets activeIndex to the selected account's index.
+     * Get the active account for request execution.
+     * Pure zero-overhead: returns the chosen account directly without rotation.
+     *
      * @param {string} [modelId] - Optional model ID
-     * @returns {Object|null} The next available account or null if none available
+     * @returns {Object|null}
      */
     pickNext(modelId = null) {
-        if (this.#pinnedEmail) {
-            const pinned = this.getPinnedAccount();
-            if (pinned && !pinned.isInvalid) {
-                pinned.lastUsed = Date.now();
-                return pinned;
-            }
+        const acc = this.getSelectedAccount();
+        if (acc) {
+            acc.lastUsed = Date.now();
+            return acc;
         }
-
-        const { account, newIndex } = selectNext(this.#accounts, this.#currentIndex, () => this.saveToDisk(), modelId);
-        this.#currentIndex = newIndex;
-        return account;
+        return null;
     }
 
     /**
-     * Get the current account without advancing the index (sticky selection).
-     * Used for cache continuity - sticks to the same account until rate-limited.
+     * Get the active account without advancing index
      * @param {string} [modelId] - Optional model ID
-     * @returns {Object|null} The current account or null if unavailable/rate-limited
+     * @returns {Object|null}
      */
     getCurrentStickyAccount(modelId = null) {
-        if (this.#pinnedEmail) {
-            const pinned = this.getPinnedAccount();
-            if (pinned && !pinned.isInvalid) {
-                pinned.lastUsed = Date.now();
-                return pinned;
-            }
+        const acc = this.getSelectedAccount();
+        if (acc) {
+            acc.lastUsed = Date.now();
+            return acc;
         }
-
-        const { account, newIndex } = getSticky(this.#accounts, this.#currentIndex, () => this.saveToDisk(), modelId);
-        this.#currentIndex = newIndex;
-        return account;
+        return null;
     }
 
     /**
-     * Check if we should wait for the current account's rate limit to reset.
-     * Used for sticky account selection - wait if rate limit is short (≤ threshold).
+     * Check if we should wait for rate limit to reset on the active account
      * @param {string} [modelId] - Optional model ID
      * @returns {{shouldWait: boolean, waitMs: number, account: Object|null}}
      */
     shouldWaitForCurrentAccount(modelId = null) {
-        if (this.#pinnedEmail) {
-            const pinned = this.getPinnedAccount();
-            if (!pinned || pinned.isInvalid) {
-                return { shouldWait: false, waitMs: 0, account: null };
-            }
-            if (modelId && pinned.modelRateLimits && pinned.modelRateLimits[modelId]) {
-                const limit = pinned.modelRateLimits[modelId];
-                if (limit.isRateLimited && limit.resetTime) {
-                    const waitMs = limit.resetTime - Date.now();
-                    if (waitMs > 0) {
-                        return { shouldWait: true, waitMs, account: pinned };
-                    }
-                }
-            }
-            return { shouldWait: false, waitMs: 0, account: pinned };
+        const acc = this.getSelectedAccount();
+        if (!acc || acc.isInvalid) {
+            return { shouldWait: false, waitMs: 0, account: null };
         }
 
-        return shouldWait(this.#accounts, this.#currentIndex, modelId);
+        if (modelId && acc.modelRateLimits && acc.modelRateLimits[modelId]) {
+            const limit = acc.modelRateLimits[modelId];
+            if (limit.isRateLimited && limit.resetTime) {
+                const waitMs = limit.resetTime - Date.now();
+                if (waitMs > 0) {
+                    return { shouldWait: true, waitMs, account: acc };
+                }
+            }
+        }
+
+        return { shouldWait: false, waitMs: 0, account: acc };
     }
 
     /**
-     * Pick an account with sticky selection preference.
-     * Prefers the current account for cache continuity, only switches when:
-     * - Current account is rate-limited for > 2 minutes
-     * - Current account is invalid
+     * Pick account for sticky request.
+     * Zero-overhead: always uses the user-selected account directly.
+     *
      * @param {string} [modelId] - Optional model ID
-     * @returns {{account: Object|null, waitMs: number}} Account to use and optional wait time
+     * @returns {{account: Object|null, waitMs: number}}
      */
     pickStickyAccount(modelId = null) {
-        if (this.#pinnedEmail) {
-            const pinned = this.getPinnedAccount();
-            if (pinned && !pinned.isInvalid) {
-                // If model has active rate limit
-                if (modelId && pinned.modelRateLimits && pinned.modelRateLimits[modelId]) {
-                    const limit = pinned.modelRateLimits[modelId];
-                    if (limit.isRateLimited && limit.resetTime) {
-                        const waitMs = limit.resetTime - Date.now();
-                        if (waitMs > 0) {
-                            return { account: null, waitMs };
-                        }
+        const acc = this.getSelectedAccount();
+        if (acc && !acc.isInvalid) {
+            if (modelId && acc.modelRateLimits && acc.modelRateLimits[modelId]) {
+                const limit = acc.modelRateLimits[modelId];
+                if (limit.isRateLimited && limit.resetTime) {
+                    const waitMs = limit.resetTime - Date.now();
+                    if (waitMs > 0) {
+                        return { account: null, waitMs };
                     }
                 }
-                pinned.lastUsed = Date.now();
-                return { account: pinned, waitMs: 0 };
             }
+            acc.lastUsed = Date.now();
+            return { account: acc, waitMs: 0 };
         }
 
-        const { account, waitMs, newIndex } = selectSticky(this.#accounts, this.#currentIndex, () => this.saveToDisk(), modelId);
-        this.#currentIndex = newIndex;
-        return { account, waitMs };
+        return { account: acc, waitMs: 0 };
     }
 
     /**
@@ -356,19 +361,23 @@ export class AccountManager {
     }
 
     /**
-     * Get the minimum wait time until any account becomes available
+     * Get the minimum wait time until account becomes available
      * @param {string} [modelId] - Optional model ID
      * @returns {number} Wait time in milliseconds
      */
     getMinWaitTimeMs(modelId = null) {
+        const acc = this.getSelectedAccount();
+        if (acc && modelId && acc.modelRateLimits && acc.modelRateLimits[modelId]) {
+            const limit = acc.modelRateLimits[modelId];
+            if (limit.isRateLimited && limit.resetTime) {
+                return Math.max(0, limit.resetTime - Date.now());
+            }
+        }
         return getMinWait(this.#accounts, modelId);
     }
 
     /**
      * Get OAuth token for an account
-     * @param {Object} account - Account object with email and credentials
-     * @returns {Promise<string>} OAuth access token
-     * @throws {Error} If token refresh fails
      */
     async getTokenForAccount(account) {
         return fetchToken(
@@ -381,33 +390,27 @@ export class AccountManager {
 
     /**
      * Get project ID for an account
-     * @param {Object} account - Account object
-     * @param {string} token - OAuth access token
-     * @returns {Promise<string>} Project ID
      */
     async getProjectForAccount(account, token) {
         return fetchProject(account, token, this.#projectCache);
     }
 
     /**
-     * Clear project cache for an account (useful on auth errors)
-     * @param {string|null} email - Email to clear cache for, or null to clear all
+     * Clear project cache for an account
      */
     clearProjectCache(email = null) {
         clearProject(this.#projectCache, email);
     }
 
     /**
-     * Clear token cache for an account (useful on auth errors)
-     * @param {string|null} email - Email to clear cache for, or null to clear all
+     * Clear token cache for an account
      */
     clearTokenCache(email = null) {
         clearToken(this.#tokenCache, email);
     }
 
     /**
-     * Save current state to disk (async)
-     * @returns {Promise<void>}
+     * Save current state to disk
      */
     async saveToDisk() {
         await saveAccounts(this.#configPath, this.#accounts, this.#settings, this.#currentIndex);
@@ -415,29 +418,23 @@ export class AccountManager {
 
     /**
      * Get status object for logging/API
-     * @returns {{accounts: Array, settings: Object}} Status object with accounts and settings
      */
     getStatus() {
-        const available = this.getAvailableAccounts();
+        const active = this.getSelectedAccount();
+        const available = active ? [active] : [];
         const invalid = this.getInvalidAccounts();
-
-        // Count accounts that have any active model-specific rate limits
-        const rateLimited = this.#accounts.filter(a => {
-            if (!a.modelRateLimits) return false;
-            return Object.values(a.modelRateLimits).some(
-                limit => limit.isRateLimited && limit.resetTime > Date.now()
-            );
-        });
 
         return {
             total: this.#accounts.length,
             available: available.length,
-            rateLimited: rateLimited.length,
+            rateLimited: 0,
             invalid: invalid.length,
-            summary: `${this.#accounts.length} total, ${available.length} available, ${rateLimited.length} rate-limited, ${invalid.length} invalid`,
+            activeEmail: active?.email || null,
+            summary: `Conta ativa: ${active?.email || 'Nenhuma'} (${this.#accounts.length} total)`,
             accounts: this.#accounts.map(a => ({
                 email: a.email,
                 source: a.source,
+                isActive: a.email === active?.email,
                 modelRateLimits: a.modelRateLimits || {},
                 isInvalid: a.isInvalid || false,
                 invalidReason: a.invalidReason || null,
@@ -448,16 +445,13 @@ export class AccountManager {
 
     /**
      * Get settings
-     * @returns {Object} Current settings object
      */
     getSettings() {
         return { ...this.#settings };
     }
 
     /**
-     * Get all accounts (internal use for quota fetching)
-     * Returns the full account objects including credentials
-     * @returns {Array<Object>} Array of account objects
+     * Get all accounts
      */
     getAllAccounts() {
         return this.#accounts;

@@ -2,8 +2,9 @@
  * Antigravity Gateway
  * Entry point - starts the universal AI gateway server
  * Features rich visual Terminal UI (TUI), arrow-key / number selection,
- * fixed dashboard window with a scrollable 10-line request feed,
- * and automatic 30-minute quota refresh.
+ * fixed dashboard window with a scrollable 10-line request feed.
+ * Account selection is purely manual on startup: no automatic account switching.
+ * Automatic quota refresh runs in the background every 30 minutes without affecting request latency.
  */
 
 import readline from 'readline';
@@ -44,16 +45,14 @@ function redrawFixedDashboard() {
     if (!process.stdout.isTTY) return;
 
     const accountManager = app.accountManager;
-    const pinnedEmail = accountManager?.getPinnedAccountEmail();
-    const accounts = accountManager?.getAllAccounts() || [];
+    const activeEmail = accountManager?.getPinnedAccountEmail();
 
     const screen = renderFixedDashboardWithLogs({
         port: PORT,
-        pinnedEmail,
+        activeEmail,
         fiveHourLimit: currentQuota?.fiveHourLimit || {},
         weeklyLimit: currentQuota?.weeklyLimit || {},
         claudeLimits: currentQuota?.claudeLimits || null,
-        accountsCount: accounts.length,
         recentLogs,
         lastRefreshTime: lastQuotaRefresh
     });
@@ -77,6 +76,7 @@ export function pushTerminalRequestLog(line) {
 
 /**
  * Start background automatic quota refresh (every 30 minutes)
+ * Runs purely in background: never blocks client requests
  */
 function startPeriodicQuotaRefresh() {
     const THIRTY_MINUTES_MS = 30 * 60 * 1000;
@@ -90,6 +90,7 @@ function startPeriodicQuotaRefresh() {
             // Silently keep previous quota display
         }
     }, THIRTY_MINUTES_MS);
+    if (dashboardRefreshTimer.unref) dashboardRefreshTimer.unref();
 }
 
 async function startServer() {
@@ -125,11 +126,12 @@ async function startServer() {
 
 /**
  * Interactive menu supporting arrow keys and direct number typing
+ * Allows choosing the exact account to use for the session.
  */
 function promptInteractiveAccountSelection(accounts, summaries) {
     return new Promise((resolve) => {
-        let selectedIndex = 0; // 0 = Multi-account intelligent mode, 1..N = Specific account
-        const maxIndex = accounts.length;
+        let selectedIndex = 0; // 0..N-1 for accounts
+        const maxIndex = Math.max(0, accounts.length - 1);
 
         const renderMenu = () => {
             console.clear();
@@ -169,34 +171,20 @@ function promptInteractiveAccountSelection(accounts, summaries) {
                 return;
             }
 
-            // Direct number selection
-            if (str && /^[0-9]$/.test(str)) {
+            // Direct number selection (1..N)
+            if (str && /^[1-9]$/.test(str)) {
                 const num = parseInt(str, 10);
-                if (num <= maxIndex) {
-                    selectedIndex = num;
+                if (num <= accounts.length) {
+                    selectedIndex = num - 1;
                     renderMenu();
                 }
-                return;
-            }
-
-            // Add account shortcut
-            if (str === '+' || str === 'a' || str === 'A') {
-                cleanup();
-                console.clear();
-                console.log('\n\x1b[33mPara adicionar uma nova conta, execute no terminal:\x1b[0m');
-                console.log('\x1b[1mnpm run accounts:add\x1b[0m\n');
-                resolve({ selectedAccount: null });
                 return;
             }
 
             // Enter confirmation
             if (key.name === 'return' || key.name === 'enter') {
                 cleanup();
-                if (selectedIndex === 0) {
-                    resolve({ selectedAccount: null });
-                } else {
-                    resolve({ selectedAccount: accounts[selectedIndex - 1] });
-                }
+                resolve(accounts[selectedIndex] || accounts[0]);
             }
         };
 
@@ -212,50 +200,40 @@ function promptInteractiveAccountSelection(accounts, summaries) {
 }
 
 /**
- * Main interactive startup routine directly in the terminal
+ * Main startup routine directly in the terminal
  */
 async function main() {
     const accountManager = app.accountManager;
     await accountManager.initialize();
 
     if (hasExplicitAccount) {
-        accountManager.setPinnedAccount(hasExplicitAccount);
+        accountManager.selectAccount(hasExplicitAccount);
         await startServer();
         return;
     }
 
     const accounts = accountManager.getAllAccounts();
 
-    // If running in non-interactive environment (CI, background, pipes), start directly
-    if (!process.stdin.isTTY || process.env.CI) {
+    // If only one account exists or running in non-interactive environment, start directly without asking
+    if (accounts.length <= 1 || !process.stdin.isTTY || process.env.CI) {
+        if (accounts.length === 1) {
+            accountManager.selectAccount(accounts[0].email);
+        }
         await startServer();
         return;
     }
 
     console.clear();
-    console.log('\x1b[36m⚡ Carregando informações de cotas do Antigravity (Google Cloud Code)...\x1b[0m');
+    console.log('\x1b[36m⚡ Carregando cotas das contas cadastradas...\x1b[0m');
 
     // Fetch quota summaries for all accounts in parallel
-    const summaries = [];
-    for (const acc of accounts) {
-        try {
-            const summary = await accountManager.getAccountQuotaSummary(acc);
-            summaries.push(summary);
-        } catch (err) {
-            summaries.push({
-                email: acc.email,
-                fiveHourLimit: { remainingPercent: 100, messagePt: 'Pronto para uso.' },
-                weeklyLimit: { remainingPercent: 100, messagePt: 'Cota semanal normal.' }
-            });
-        }
-    }
+    const summaries = await Promise.all(
+        accounts.map(acc => accountManager.getAccountQuotaSummary(acc))
+    );
 
-    const { selectedAccount } = await promptInteractiveAccountSelection(accounts, summaries);
-
-    if (selectedAccount) {
-        accountManager.setPinnedAccount(selectedAccount.email);
-    } else {
-        accountManager.setPinnedAccount(null);
+    const chosenAccount = await promptInteractiveAccountSelection(accounts, summaries);
+    if (chosenAccount) {
+        accountManager.selectAccount(chosenAccount.email);
     }
 
     await startServer();
