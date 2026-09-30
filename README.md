@@ -103,6 +103,9 @@ The gateway exposes three API endpoints:
 
 | Model ID | Type | Context | Output | Thinking |
 |----------|------|---------|--------|----------|
+| `claude-opus-4-6-low[1m]` | Claude Opus 4.6 (Gemini 3.8 Flash) | **1M** | 64K | ✓ (2k budget) |
+| `claude-opus-4-6-medium[1m]` | Claude Opus 4.6 (Gemini 3.8 Flash) | **1M** | 64K | ✓ (8k budget) |
+| `claude-opus-4-6-high[1m]` | Claude Opus 4.6 (Gemini 3.8 Flash) | **1M** | 64K | ✓ (32k budget) |
 | `claude-sonnet-4-5-thinking` | Claude | 200K | 16K | ✓ |
 | `claude-opus-4-5-thinking` | Claude | 200K | 16K | ✓ |
 | `claude-sonnet-4-5` | Claude | 200K | 8K | ✗ |
