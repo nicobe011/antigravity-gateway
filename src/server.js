@@ -809,10 +809,16 @@ app.post(['/v1/messages', '/messages'], async (req, res) => {
             try {
                 accountManager.clearProjectCache();
                 accountManager.clearTokenCache();
-                await forceRefresh();
-                errorMessage = 'Token was expired and has been refreshed. Please retry your request.';
+                const activeAccount = accountManager.getSelectedAccount();
+                if (activeAccount && activeAccount.source === 'oauth') {
+                    await accountManager.getTokenForAccount(activeAccount);
+                    errorMessage = 'Token was expired and has been refreshed via OAuth. Please retry your request.';
+                } else {
+                    await forceRefresh();
+                    errorMessage = 'Token was expired and has been refreshed. Please retry your request.';
+                }
             } catch (refreshError) {
-                errorMessage = 'Could not refresh token. Make sure Antigravity is running.';
+                errorMessage = 'Sessão expirada ou não autenticada. Execute "npm run accounts:add" para conectar sua conta.';
             }
         }
 

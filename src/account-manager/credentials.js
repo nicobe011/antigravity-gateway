@@ -59,15 +59,22 @@ export async function getTokenForAccount(account, tokenCache, onInvalid, onSave)
             logger.error(`[AccountManager] Failed to refresh token for ${account.email}:`, error.message);
             // Mark account as invalid (credentials need re-auth)
             if (onInvalid) onInvalid(account.email, error.message);
-            throw new Error(`AUTH_INVALID: ${account.email}: ${error.message}`);
+            throw new Error(`AUTH_INVALID: ${account.email}: Necessário reautenticar a conta. Execute: npm run accounts:add`);
         }
     } else if (account.source === 'manual' && account.apiKey) {
         token = account.apiKey;
     } else {
-        // Extract from database
-        const dbPath = account.dbPath || ANTIGRAVITY_DB_PATH;
-        const authData = getAuthStatus(dbPath);
-        token = authData.apiKey;
+        // Extract from database only if source is explicitly 'database' or if the database file exists
+        try {
+            const dbPath = account.dbPath || ANTIGRAVITY_DB_PATH;
+            const authData = getAuthStatus(dbPath);
+            token = authData.apiKey;
+        } catch (dbError) {
+            throw new Error(
+                `Nenhuma credencial válida para ${account.email || 'conta'}. ` +
+                `Execute 'npm run accounts:add' para conectar sua conta Google.`
+            );
+        }
     }
 
     // Cache the token

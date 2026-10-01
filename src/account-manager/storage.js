@@ -83,7 +83,8 @@ export function loadDefaultAccount(dbPath) {
             return { accounts: [account], tokenCache };
         }
     } catch (error) {
-        logger.error('[AccountManager] Failed to load default account:', error.message);
+        // Silently return empty accounts on machines without Antigravity installed
+        logger.debug('[AccountManager] Antigravity local database not found or inaccessible');
     }
 
     return { accounts: [], tokenCache: new Map() };
