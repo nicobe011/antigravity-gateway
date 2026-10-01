@@ -109,14 +109,13 @@ async function runTests() {
     console.log('6. Testing external models list for GET /v1/models...');
     const externalModels = getExternalClaudeModels();
     assert.ok(Array.isArray(externalModels));
-    assert.strictEqual(externalModels.length, 3);
+    assert.strictEqual(externalModels.length, 11);
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-low[1m]'));
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-medium[1m]'));
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-high[1m]'));
-    assert.ok(externalModels.every(m => m.owned_by === 'anthropic'));
-    assert.ok(externalModels.every(m => m.max_input_tokens === 1000000));
-    assert.ok(externalModels.every(m => m.max_tokens === 65536));
-    console.log('   ✓ External models listing strictly limited to the 3 Opus 4.6 tiers with 1M tokens');
+    assert.ok(externalModels.some(m => m.id === 'opencode/nemotron-3.5-lightning-free'));
+    assert.ok(externalModels.some(m => m.id === 'opencode/muse-spark-1.3-contributor-free'));
+    console.log('   ✓ External models listing includes 3 Opus 4.6 1M tiers + OpenCode Zen free models');
 
     // 7. Token Estimation Tests
     console.log('7. Testing token count estimation...');

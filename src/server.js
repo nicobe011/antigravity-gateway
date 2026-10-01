@@ -26,6 +26,21 @@ import {
 } from './format/openai-responses.js';
 import { resolveBackendModel, estimateTokenCount } from './model-mapper.js';
 import { renderDashboardHtml } from './views/dashboard-html.js';
+import {
+    isOpenCodeZenModel,
+    resolveOpenCodeZenModel,
+    getOpenCodeZenModelMetadata,
+    sendOpenCodeZenMessage,
+    sendOpenCodeZenStream,
+    getOpenCodeZenApiKey,
+    saveOpenCodeZenApiKey
+} from './opencode/zen-client.js';
+import {
+    convertAnthropicToOpenCodeZen,
+    convertOpenCodeZenToAnthropic,
+    streamOpenCodeZenResponse
+} from './opencode/request-converter.js';
+import { compactHistoryIfNeeded } from './format/history-compactor.js';
 
 // Parse fallback flag directly from command line args to avoid circular dependency
 const args = process.argv.slice(2);
@@ -755,6 +770,49 @@ app.post(['/v1/messages', '/messages'], async (req, res) => {
                     : (typeof msg.content === 'string' ? 'text' : 'unknown');
                 logger.debug(`  [${i}] ${msg.role}: ${contentTypes}`);
             });
+        }
+
+        // Check if the requested model routes to OpenCode Zen
+        if (isOpenCodeZenModel(requestedModel) || isOpenCodeZenModel(backendModel)) {
+            const zenCanonical = resolveOpenCodeZenModel(requestedModel || backendModel);
+            const zenMeta = getOpenCodeZenModelMetadata(zenCanonical);
+            logger.info(`[API] Roteando para OpenCode Zen: ${requestedModel} -> ${zenCanonical}`);
+
+            // Apply native history compaction if conversation exceeds model limit
+            const compactedReq = compactHistoryIfNeeded(request, zenMeta?.contextWindow || 262144);
+            const openAiPayload = convertAnthropicToOpenCodeZen(compactedReq);
+
+            res.setHeader('anthropic-ratelimit-input-tokens-limit', String(zenMeta?.contextWindow || 262144));
+            res.setHeader('anthropic-ratelimit-output-tokens-limit', String(zenMeta?.maxTokens || 32768));
+
+            if (stream) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.setHeader('X-Accel-Buffering', 'no');
+                res.flushHeaders();
+
+                try {
+                    const chunkStream = sendOpenCodeZenStream(openAiPayload);
+                    for await (const event of streamOpenCodeZenResponse(chunkStream, requestedModel)) {
+                        res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+                        if (res.flush) res.flush();
+                    }
+                    return res.end();
+                } catch (zenStreamErr) {
+                    logger.error('[API] OpenCode Zen stream error:', zenStreamErr.message);
+                    const { errorType, errorMessage } = parseError(zenStreamErr);
+                    res.write(`event: error\ndata: ${JSON.stringify({
+                        type: 'error',
+                        error: { type: errorType, message: errorMessage }
+                    })}\n\n`);
+                    return res.end();
+                }
+            } else {
+                const zenResp = await sendOpenCodeZenMessage(openAiPayload);
+                const anthropicResp = convertOpenCodeZenToAnthropic(zenResp, requestedModel);
+                return res.json(anthropicResp);
+            }
         }
 
         // Provide Anthropic rate limit and context window headers for Claude Desktop / Claude Code

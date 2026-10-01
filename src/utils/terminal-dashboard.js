@@ -2,6 +2,7 @@
  * Terminal UI Dashboard for Antigravity Gateway
  * Renders a rich, modern console interface directly in the terminal (CMD/PowerShell)
  * Displays Weekly Limit Remaining and Five Hour Limit Remaining from official Antigravity quota API.
+ * Supports provider selection: Google Antigravity (Gemini 3.8 Flash) and OpenCode Zen (Free Models).
  * Keeps a fixed dashboard viewport with a scrollable 10-line request feed.
  */
 
@@ -61,30 +62,31 @@ export function renderProgressBar(percent, length = 22) {
 /**
  * Render the interactive arrow-navigable selection menu
  *
- * @param {Object} data - Accounts, summaries, and selectedIndex
+ * @param {Object} data - Accounts, summaries, OpenCode Zen status and selectedIndex
  * @returns {string} Formatted menu
  */
 export function renderArrowSelectionMenu(data) {
     const {
         accounts = [],
         summaries = [],
-        selectedIndex = 0
+        selectedIndex = 0,
+        hasOpenCodeZen = false
     } = data;
 
     const lines = [];
 
     lines.push(`${C.brightMagenta}╔══════════════════════════════════════════════════════════════════════════════════╗${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}⚡ ANTIGRAVITY GATEWAY - SELEÇÃO DE CONTA NO TERMINAL${C.reset}            ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}⚡ ANTIGRAVITY GATEWAY - SELEÇÃO DE CONTA E PROVEDOR${C.reset}              ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}       ${C.cyan}Navegue com [↑ / ↓] e tecle [ENTER] ou digite o número da conta${C.reset}            ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}╚══════════════════════════════════════════════════════════════════════════════════╝${C.reset}`);
     lines.push('');
 
-    lines.push(`${C.bold}${C.brightCyan}📊 COTAS E LIMITES REAIS DO ANTIGRAVITY:${C.reset}`);
+    lines.push(`${C.bold}${C.brightCyan}📊 COTAS E LIMITES REAIS DO GOOGLE ANTIGRAVITY:${C.reset}`);
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
 
     // Accounts list
     if (accounts.length === 0) {
-        lines.push(`   ${C.yellow}Nenhuma conta configurada. Execute: npm run accounts:add${C.reset}`);
+        lines.push(`   ${C.yellow}Nenhuma conta Google configurada. Execute: npm run accounts:add${C.reset}`);
     } else {
         accounts.forEach((acc, idx) => {
             const accNum = idx + 1;
@@ -102,11 +104,24 @@ export function renderArrowSelectionMenu(data) {
         });
     }
 
+    // OpenCode Zen Section
+    const zenOptionIndex = accounts.length;
+    const isZenSelected = selectedIndex === zenOptionIndex;
+    const zenPrefix = isZenSelected ? `${C.brightGreen}${C.bold} ► [Z] ` : `   [Z] `;
+
+    lines.push(`${C.bold}${C.brightCyan}🌐 PROVEDOR ADICIONAL (OPENCODE ZEN):${C.reset}`);
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
-    if (accounts.length > 1) {
-        lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para escolher, ${C.bold}ENTER${C.reset}${C.dim} para confirmar, ou digite o número ${C.bold}[1..${accounts.length}]${C.reset}${C.dim}.${C.reset}`);
+    if (hasOpenCodeZen) {
+        lines.push(`${zenPrefix}${C.bold}OPENCODE ZEN (Modelos Free Ativos)${C.reset}${isZenSelected ? ` ${C.brightYellow}(SELECIONADO)${C.reset}` : ''}`);
+        lines.push(`        ${C.dim}↳ Modelos Free: Nemotron 3.5, Muse Spark 1.3, Ling 3.0, LongCat 2.5, Space Bunny, MiMo-V2.6${C.reset}`);
+    } else {
+        lines.push(`${zenPrefix}${C.yellow}Configurar Chave de API do OpenCode Zen (Modelos Free)${C.reset}`);
+        lines.push(`        ${C.dim}↳ Digite Z para inserir sua chave oficial da API OpenCode Zen.${C.reset}`);
     }
-    lines.push(`  ${C.dim}Para trocar de conta depois, basta fechar com ${C.bold}Ctrl+C${C.reset}${C.dim} e reabrir o ${C.bold}npm start${C.reset}${C.dim}.${C.reset}`);
+
+    lines.push('');
+    lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
+    lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para escolher, ${C.bold}ENTER${C.reset}${C.dim} para confirmar, número ${C.bold}[1..${accounts.length}]${C.reset}${C.dim} ou ${C.bold}[Z]${C.reset}${C.dim} para OpenCode Zen.${C.reset}`);
 
     return lines.join('\n');
 }
@@ -114,13 +129,14 @@ export function renderArrowSelectionMenu(data) {
 /**
  * Render the fixed top banner + scrollable recent request logs
  *
- * @param {Object} data - Server state, quotas, and recent log lines
+ * @param {Object} data - Server state, quotas, provider info and recent log lines
  * @returns {string} Complete terminal screen content
  */
 export function renderFixedDashboardWithLogs(data) {
     const {
         port = 8080,
         activeEmail = null,
+        activeProvider = 'antigravity',
         fiveHourLimit = {},
         weeklyLimit = {},
         claudeLimits = null,
@@ -136,37 +152,41 @@ export function renderFixedDashboardWithLogs(data) {
     lines.push(`${C.brightMagenta}║${C.reset}   Porta Local: ${C.brightGreen}http://localhost:${port}${C.reset}                                            ${C.brightMagenta}║${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
 
-    // Mode status - Manual / Fixed to the chosen account
-    lines.push(`${C.brightMagenta}║${C.reset}   Conta Ativa: ${C.brightYellow}⭐ ${activeEmail || 'Padrão'}${C.reset} ${C.dim}(Modo Manual - Zero Rotação)${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}   Modelos Claude: ${C.cyan}claude-opus-4-6-low/medium/high[1m] -> Gemini 3.8 Flash${C.reset}`);
-    lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
+    if (activeProvider === 'opencode-zen') {
+        lines.push(`${C.brightMagenta}║${C.reset}   Provedor Ativo: ${C.brightGreen}🌐 OpenCode Zen (Modelos Gratuitos Oficiais)${C.reset}`);
+        lines.push(`${C.brightMagenta}║${C.reset}   Modelos Free: ${C.cyan}Nemotron 3.5, Muse Spark, Ling 3.0, LongCat, MiMo, Big Pickle${C.reset}`);
+    } else {
+        lines.push(`${C.brightMagenta}║${C.reset}   Conta Ativa: ${C.brightYellow}⭐ ${activeEmail || 'Padrão'}${C.reset} ${C.dim}(Google Antigravity - Modo Manual)${C.reset}`);
+        lines.push(`${C.brightMagenta}║${C.reset}   Modelos Claude: ${C.cyan}claude-opus-4-6-low/medium/high[1m] -> Gemini 3.8 Flash${C.reset}`);
+        lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
 
-    // Gemini Models Section Header
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightCyan}🤖 Cotas Oficiais do Antigravity (Gemini Models):${C.reset}`);
+        // Gemini Models Section Header
+        lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightCyan}🤖 Cotas Oficiais do Antigravity (Gemini Models):${C.reset}`);
 
-    // 1. Weekly Limit Remaining
-    if (weeklyLimit.remainingPercent !== undefined) {
-        lines.push(`${C.brightMagenta}║${C.reset}      ${C.bold}📅 Weekly Limit Remaining (Limite Semanal):${C.reset}`);
-        lines.push(`${C.brightMagenta}║${C.reset}         [${renderProgressBar(weeklyLimit.remainingPercent, 20)}]`);
-        lines.push(`${C.brightMagenta}║${C.reset}         ${C.dim}${weeklyLimit.messagePt || ''}${C.reset}`);
-    }
+        // 1. Weekly Limit Remaining
+        if (weeklyLimit.remainingPercent !== undefined) {
+            lines.push(`${C.brightMagenta}║${C.reset}      ${C.bold}📅 Weekly Limit Remaining (Limite Semanal):${C.reset}`);
+            lines.push(`${C.brightMagenta}║${C.reset}         [${renderProgressBar(weeklyLimit.remainingPercent, 20)}]`);
+            lines.push(`${C.brightMagenta}║${C.reset}         ${C.dim}${weeklyLimit.messagePt || ''}${C.reset}`);
+        }
 
-    // 2. 5-Hour Limit Remaining
-    if (fiveHourLimit.remainingPercent !== undefined) {
-        lines.push(`${C.brightMagenta}║${C.reset}      ${C.bold}⏱️  Five Hour Limit Remaining (Limite de 5 Horas):${C.reset}`);
-        lines.push(`${C.brightMagenta}║${C.reset}         [${renderProgressBar(fiveHourLimit.remainingPercent, 20)}]`);
-        lines.push(`${C.brightMagenta}║${C.reset}         ${C.dim}${fiveHourLimit.messagePt || ''}${C.reset}`);
-    }
+        // 2. 5-Hour Limit Remaining
+        if (fiveHourLimit.remainingPercent !== undefined) {
+            lines.push(`${C.brightMagenta}║${C.reset}      ${C.bold}⏱️  Five Hour Limit Remaining (Limite de 5 Horas):${C.reset}`);
+            lines.push(`${C.brightMagenta}║${C.reset}         [${renderProgressBar(fiveHourLimit.remainingPercent, 20)}]`);
+            lines.push(`${C.brightMagenta}║${C.reset}         ${C.dim}${fiveHourLimit.messagePt || ''}${C.reset}`);
+        }
 
-    // Claude and GPT models section if available
-    if (claudeLimits && claudeLimits.weekly && claudeLimits.fiveHour) {
-        lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightMagenta}🧠 Modelos Claude e GPT:${C.reset}`);
-        lines.push(`${C.brightMagenta}║${C.reset}      Semanal: [${renderProgressBar(claudeLimits.weekly.remainingPercent, 14)}] • 5-Horas: [${renderProgressBar(claudeLimits.fiveHour.remainingPercent, 14)}]`);
+        // Claude and GPT models section if available
+        if (claudeLimits && claudeLimits.weekly && claudeLimits.fiveHour) {
+            lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightMagenta}🧠 Modelos Claude e GPT:${C.reset}`);
+            lines.push(`${C.brightMagenta}║${C.reset}      Semanal: [${renderProgressBar(claudeLimits.weekly.remainingPercent, 14)}] • 5-Horas: [${renderProgressBar(claudeLimits.fiveHour.remainingPercent, 14)}]`);
+        }
     }
 
     const refreshFormatted = lastRefreshTime.toLocaleTimeString('pt-BR');
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Cotas atualizadas: ${refreshFormatted} | Para trocar de conta: feche e reabra o npm start${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Status: OK | Cotas sincronizadas: ${refreshFormatted} | Parar: Ctrl+C${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightWhite}📋 HISTÓRICO DE REQUISIÇÕES EM TEMPO REAL (Últimas 10):${C.reset}`);
 

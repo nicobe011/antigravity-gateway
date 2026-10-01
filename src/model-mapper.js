@@ -6,7 +6,7 @@
  * Supports fake external Claude models and extended thinking configurations.
  */
 
-import { isThinkingModel, GEMINI_CONTEXT_WINDOW_TOKENS } from './constants.js';
+import { isThinkingModel, GEMINI_CONTEXT_WINDOW_TOKENS, OPENCODE_ZEN_FREE_MODELS } from './constants.js';
 
 /**
  * Standard mapping dictionary from external/client model names
@@ -19,28 +19,41 @@ export const MODEL_MAP = {
     'claude-opus-4-6-high': 'gemini-3.8-flash-tiered',
     'claude-opus-4-6-low[1m]': 'gemini-3.8-flash-tiered',
     'claude-opus-4-6-medium[1m]': 'gemini-3.8-flash-tiered',
-    'claude-opus-4-6-high[1m]': 'gemini-3.8-flash-tiered'
+    'claude-opus-4-6-high[1m]': 'gemini-3.8-flash-tiered',
+
+    // OpenCode Zen Free Models aliases
+    'claude-nemotron-lightning': 'opencode/nemotron-3.5-lightning-free',
+    'claude-muse-spark': 'opencode/muse-spark-1.3-contributor-free',
+    'claude-ling-flash': 'opencode/ling-3.0-flash-fin-free',
+    'claude-longcat-preview': 'opencode/longcat-2.5-preview-free',
+    'claude-space-bunny': 'opencode/space-bunny-free',
+    'claude-mimo-flash': 'opencode/mimo-v2.6-flash-free',
+    'claude-nemotron-ultra': 'opencode/nemotron-3-ultra-free',
+    'claude-big-pickle': 'opencode/big-pickle'
 };
 
 /**
  * List of external Claude models advertised via GET /v1/models
- * Strictly exposes the 3 Opus 4.6 tiers with 1M context window.
+ * Includes the 3 Opus 4.6 tiers with 1M context window and OpenCode Zen free models
  */
 export const EXTERNAL_CLAUDE_MODELS = [
     {
         id: 'claude-opus-4-6-low[1m]',
         displayName: 'Claude Opus 4.6 Low (Gemini 3.8 Flash Thinking 2k) 1M',
-        backendModel: 'gemini-3.8-flash-tiered'
+        backendModel: 'gemini-3.8-flash-tiered',
+        contextWindow: 1000000
     },
     {
         id: 'claude-opus-4-6-medium[1m]',
         displayName: 'Claude Opus 4.6 Medium (Gemini 3.8 Flash Thinking 8k) 1M',
-        backendModel: 'gemini-3.8-flash-tiered'
+        backendModel: 'gemini-3.8-flash-tiered',
+        contextWindow: 1000000
     },
     {
         id: 'claude-opus-4-6-high[1m]',
         displayName: 'Claude Opus 4.6 High (Gemini 3.8 Flash Thinking 32k) 1M',
-        backendModel: 'gemini-3.8-flash-tiered'
+        backendModel: 'gemini-3.8-flash-tiered',
+        contextWindow: 1000000
     }
 ];
 
@@ -173,7 +186,7 @@ export function getExternalClaudeModels() {
         }
     }
 
-    return models.map(m => ({
+    const list = models.map(m => ({
         id: m.id,
         type: 'model',
         object: 'model',
@@ -182,9 +195,27 @@ export function getExternalClaudeModels() {
         created: now,
         owned_by: 'anthropic',
         description: m.displayName,
-        max_input_tokens: GEMINI_CONTEXT_WINDOW_TOKENS,
+        max_input_tokens: m.contextWindow || GEMINI_CONTEXT_WINDOW_TOKENS,
         max_tokens: 65536
     }));
+
+    // Append OpenCode Zen free models as Claude-compatible options
+    for (const zenModel of OPENCODE_ZEN_FREE_MODELS) {
+        list.push({
+            id: zenModel.id,
+            type: 'model',
+            object: 'model',
+            display_name: `${zenModel.displayName} (OpenCode Zen)`,
+            created_at: nowIso,
+            created: now,
+            owned_by: 'opencode',
+            description: `${zenModel.displayName} - Modelo Gratuito do OpenCode Zen`,
+            max_input_tokens: zenModel.contextWindow || 262144,
+            max_tokens: zenModel.maxTokens || 32768
+        });
+    }
+
+    return list;
 }
 
 /**

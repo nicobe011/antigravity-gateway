@@ -162,6 +162,89 @@ export const OAUTH_CONFIG = {
         'https://www.googleapis.com/auth/experimentsandconfigs'
     ]
 };
+// OpenCode Zen Official API Configuration
+export const OPENCODE_ZEN_API_BASE = process.env.OPENCODE_ZEN_API_BASE || 'https://opencode.ai/zen/v1';
+export const OPENCODE_ZEN_CONFIG_PATH = join(
+    homedir(),
+    '.config/antigravity-gateway/opencode-zen.json'
+);
+
+// Official OpenCode Zen Free Models Catalog (from image and opencode cache)
+export const OPENCODE_ZEN_FREE_MODELS = [
+    {
+        id: 'opencode/nemotron-3.5-lightning-free',
+        displayName: 'Nemotron 3.5 Lightning Free',
+        family: 'nemotron',
+        supportsImages: false,
+        supportsThinking: true,
+        contextWindow: 262144,
+        maxTokens: 262144
+    },
+    {
+        id: 'opencode/muse-spark-1.3-contributor-free',
+        displayName: 'Muse Spark 1.3 Free',
+        family: 'muse',
+        supportsImages: true,
+        supportsThinking: true,
+        contextWindow: 1048576,
+        maxTokens: 131072
+    },
+    {
+        id: 'opencode/ling-3.0-flash-fin-free',
+        displayName: 'Ling 3.0 Flash Fin Free',
+        family: 'ling',
+        supportsImages: false,
+        supportsThinking: true,
+        contextWindow: 262144,
+        maxTokens: 32768
+    },
+    {
+        id: 'opencode/longcat-2.5-preview-free',
+        displayName: 'LongCat 2.5 Preview Free',
+        family: 'longcat',
+        supportsImages: true,
+        supportsThinking: true,
+        contextWindow: 1000000,
+        maxTokens: 131072
+    },
+    {
+        id: 'opencode/space-bunny-free',
+        displayName: 'Space Bunny Free',
+        family: 'space-bunny',
+        supportsImages: true,
+        supportsThinking: true,
+        contextWindow: 1048576,
+        maxTokens: 524288
+    },
+    {
+        id: 'opencode/mimo-v2.6-flash-free',
+        displayName: 'MiMo-V2.6-Flash Free',
+        family: 'mimo',
+        supportsImages: true,
+        supportsThinking: true,
+        contextWindow: 200000,
+        maxTokens: 32000
+    },
+    {
+        id: 'opencode/nemotron-3-ultra-free',
+        displayName: 'Nemotron 3 Ultra Free',
+        family: 'nemotron',
+        supportsImages: false,
+        supportsThinking: true,
+        contextWindow: 1000000,
+        maxTokens: 128000
+    },
+    {
+        id: 'opencode/big-pickle',
+        displayName: 'Big Pickle',
+        family: 'pickle',
+        supportsImages: false,
+        supportsThinking: true,
+        contextWindow: 200000,
+        maxTokens: 32000
+    }
+];
+
 export const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CONFIG.callbackPort}/oauth-callback`;
 
 // Model fallback mapping - maps primary model to fallback when quota exhausted
