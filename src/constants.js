@@ -176,7 +176,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         displayName: 'Nemotron 3.5 Lightning Free',
         family: 'nemotron',
         supportsImages: false,
-        supportsThinking: true,
+        supportsThinking: false,
+        reasoningType: 'none',
         contextWindow: 262144,
         maxTokens: 262144
     },
@@ -186,6 +187,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         family: 'muse',
         supportsImages: true,
         supportsThinking: true,
+        reasoningType: 'effort',
+        reasoningValues: ['minimal', 'low', 'medium', 'high', 'xhigh'],
         contextWindow: 1048576,
         maxTokens: 131072
     },
@@ -195,6 +198,7 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         family: 'ling',
         supportsImages: false,
         supportsThinking: true,
+        reasoningType: 'toggle',
         contextWindow: 262144,
         maxTokens: 32768
     },
@@ -204,6 +208,7 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         family: 'longcat',
         supportsImages: true,
         supportsThinking: true,
+        reasoningType: 'toggle',
         contextWindow: 1000000,
         maxTokens: 131072
     },
@@ -213,6 +218,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         family: 'space-bunny',
         supportsImages: true,
         supportsThinking: true,
+        reasoningType: 'effort',
+        reasoningValues: ['low', 'medium', 'high', 'xhigh', 'max'],
         contextWindow: 1048576,
         maxTokens: 524288
     },
@@ -221,7 +228,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         displayName: 'MiMo-V2.6-Flash Free',
         family: 'mimo',
         supportsImages: true,
-        supportsThinking: true,
+        supportsThinking: false,
+        reasoningType: 'none',
         contextWindow: 200000,
         maxTokens: 32000
     },
@@ -230,7 +238,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         displayName: 'Nemotron 3 Ultra Free',
         family: 'nemotron',
         supportsImages: false,
-        supportsThinking: true,
+        supportsThinking: false,
+        reasoningType: 'none',
         contextWindow: 1000000,
         maxTokens: 128000
     },
@@ -239,7 +248,8 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         displayName: 'Big Pickle',
         family: 'pickle',
         supportsImages: false,
-        supportsThinking: true,
+        supportsThinking: false,
+        reasoningType: 'none',
         contextWindow: 200000,
         maxTokens: 32000
     }

@@ -2,7 +2,7 @@
  * Terminal UI Dashboard for Antigravity Gateway
  * Renders a rich, modern console interface directly in the terminal (CMD/PowerShell)
  * Displays Weekly Limit Remaining and Five Hour Limit Remaining from official Antigravity quota API.
- * Supports provider selection: Google Antigravity (Gemini 3.8 Flash) and OpenCode Zen (Free Models).
+ * Supports provider selection: Google Antigravity & OpenCode Zen (Free Models with Reasoning Config).
  * Keeps a fixed dashboard viewport with a scrollable 10-line request feed.
  */
 
@@ -112,8 +112,8 @@ export function renderArrowSelectionMenu(data) {
     lines.push(`${C.bold}${C.brightCyan}🌐 PROVEDOR ADICIONAL (OPENCODE ZEN):${C.reset}`);
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
     if (hasOpenCodeZen) {
-        lines.push(`${zenPrefix}${C.bold}OPENCODE ZEN (Modelos Free Ativos)${C.reset}${isZenSelected ? ` ${C.brightYellow}(SELECIONADO)${C.reset}` : ''}`);
-        lines.push(`        ${C.dim}↳ Modelos Free: Nemotron 3.5, Muse Spark 1.3, Ling 3.0, LongCat 2.5, Space Bunny, MiMo-V2.6${C.reset}`);
+        lines.push(`${zenPrefix}${C.bold}OPENCODE ZEN (Escolher Modelo Free & Reasoning)${C.reset}${isZenSelected ? ` ${C.brightYellow}(SELECIONADO)${C.reset}` : ''}`);
+        lines.push(`        ${C.dim}↳ Nemotron 3.5, Muse Spark 1.3, Ling 3.0, LongCat 2.5, Space Bunny, MiMo-V2.6, Big Pickle${C.reset}`);
     } else {
         lines.push(`${zenPrefix}${C.yellow}Configurar Chave de API do OpenCode Zen (Modelos Free)${C.reset}`);
         lines.push(`        ${C.dim}↳ Digite Z para inserir sua chave oficial da API OpenCode Zen.${C.reset}`);
@@ -122,6 +122,72 @@ export function renderArrowSelectionMenu(data) {
     lines.push('');
     lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
     lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para escolher, ${C.bold}ENTER${C.reset}${C.dim} para confirmar, número ${C.bold}[1..${accounts.length}]${C.reset}${C.dim} ou ${C.bold}[Z]${C.reset}${C.dim} para OpenCode Zen.${C.reset}`);
+
+    return lines.join('\n');
+}
+
+/**
+ * Render OpenCode Zen Model Selection Menu
+ *
+ * @param {Array} models - Array of OpenCode Zen free models
+ * @param {number} selectedIndex - Currently selected index
+ * @returns {string} Formatted menu
+ */
+export function renderOpenCodeZenModelMenu(models, selectedIndex = 0) {
+    const lines = [];
+
+    lines.push(`${C.brightMagenta}╔══════════════════════════════════════════════════════════════════════════════════╗${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}🌐 SELEÇÃO DE MODELO GRATUITO - OPENCODE ZEN${C.reset}                              ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.cyan}Escolha qual modelo você quer usar nesta sessão do OpenCode Zen${C.reset}            ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}╚══════════════════════════════════════════════════════════════════════════════════╝${C.reset}`);
+    lines.push('');
+
+    models.forEach((m, idx) => {
+        const isSelected = selectedIndex === idx;
+        const prefix = isSelected ? `${C.brightGreen}${C.bold} ► [${idx + 1}] ` : `   [${idx + 1}] `;
+        const visionTag = m.supportsImages ? `${C.brightGreen}[Suporta Visão/Imagem]${C.reset}` : `${C.dim}[Texto puro]${C.reset}`;
+        const thinkTag = m.supportsThinking
+            ? (m.reasoningType === 'effort' ? `${C.brightYellow}[Raciocínio Configurável]${C.reset}` : `${C.yellow}[Raciocínio Ativo]${C.reset}`)
+            : `${C.dim}[Sem Raciocínio]${C.reset}`;
+
+        lines.push(`${prefix}${C.bold}${m.displayName}${C.reset} ${visionTag} ${thinkTag}`);
+        lines.push(`        ${C.dim}Janela de Contexto: ${Math.round(m.contextWindow / 1024)}k tokens | Saída: ${Math.round(m.maxTokens / 1024)}k tokens${C.reset}`);
+    });
+
+    lines.push('');
+    lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
+    lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} para navegar e ${C.bold}ENTER${C.reset}${C.dim} para confirmar o modelo, ou digite o número ${C.bold}[1..${models.length}]${C.reset}${C.dim}.${C.reset}`);
+
+    return lines.join('\n');
+}
+
+/**
+ * Render Reasoning / Thinking Configuration Menu for OpenCode Zen
+ *
+ * @param {Object} model - Selected OpenCode Zen model
+ * @param {number} selectedIndex - Currently selected index
+ * @param {Array} options - List of reasoning options
+ * @returns {string} Formatted menu
+ */
+export function renderOpenCodeZenReasoningMenu(model, selectedIndex = 0, options = []) {
+    const lines = [];
+
+    lines.push(`${C.brightMagenta}╔══════════════════════════════════════════════════════════════════════════════════╗${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.bold}${C.brightWhite}🧠 CONFIGURAÇÃO DE RACIOCÍNIO (THINKING) - ${model.displayName.toUpperCase().slice(0, 20)}${C.reset}   ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}       ${C.cyan}Defina o nível de pensamento desejado para este modelo${C.reset}                     ${C.brightMagenta}║${C.reset}`);
+    lines.push(`${C.brightMagenta}╚══════════════════════════════════════════════════════════════════════════════════╝${C.reset}`);
+    lines.push('');
+
+    options.forEach((opt, idx) => {
+        const isSelected = selectedIndex === idx;
+        const prefix = isSelected ? `${C.brightGreen}${C.bold} ► [${idx + 1}] ` : `   [${idx + 1}] `;
+        lines.push(`${prefix}${C.bold}${opt.label}${C.reset}`);
+        lines.push(`        ${C.dim}↳ ${opt.description}${C.reset}`);
+    });
+
+    lines.push('');
+    lines.push(`${C.dim}──────────────────────────────────────────────────────────────────────────────────${C.reset}`);
+    lines.push(`  ${C.dim}Use ${C.bold}↑/↓${C.reset}${C.dim} e ${C.bold}ENTER${C.reset}${C.dim} para confirmar, ou digite o número ${C.bold}[1..${options.length}]${C.reset}${C.dim}.${C.reset}`);
 
     return lines.join('\n');
 }
@@ -137,6 +203,8 @@ export function renderFixedDashboardWithLogs(data) {
         port = 8080,
         activeEmail = null,
         activeProvider = 'antigravity',
+        zenModelName = null,
+        zenReasoning = null,
         fiveHourLimit = {},
         weeklyLimit = {},
         claudeLimits = null,
@@ -153,8 +221,13 @@ export function renderFixedDashboardWithLogs(data) {
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
 
     if (activeProvider === 'opencode-zen') {
+        const reasoningDisplay = zenReasoning === 'disabled'
+            ? `${C.red}Desativado (Zero Pensamentos)${C.reset}`
+            : (zenReasoning ? `${C.brightYellow}${zenReasoning}${C.reset}` : `${C.dim}Padrão${C.reset}`);
+
         lines.push(`${C.brightMagenta}║${C.reset}   Provedor Ativo: ${C.brightGreen}🌐 OpenCode Zen (Modelos Gratuitos Oficiais)${C.reset}`);
-        lines.push(`${C.brightMagenta}║${C.reset}   Modelos Free: ${C.cyan}Nemotron 3.5, Muse Spark, Ling 3.0, LongCat, MiMo, Big Pickle${C.reset}`);
+        lines.push(`${C.brightMagenta}║${C.reset}   Modelo Escolhido: ${C.brightWhite}⭐ ${zenModelName || 'Nemotron 3.5 Lightning Free'}${C.reset}`);
+        lines.push(`${C.brightMagenta}║${C.reset}   Modo de Raciocínio (Thinking): ${reasoningDisplay}`);
     } else {
         lines.push(`${C.brightMagenta}║${C.reset}   Conta Ativa: ${C.brightYellow}⭐ ${activeEmail || 'Padrão'}${C.reset} ${C.dim}(Google Antigravity - Modo Manual)${C.reset}`);
         lines.push(`${C.brightMagenta}║${C.reset}   Modelos Claude: ${C.cyan}claude-opus-4-6-low/medium/high[1m] -> Gemini 3.8 Flash${C.reset}`);
@@ -186,7 +259,7 @@ export function renderFixedDashboardWithLogs(data) {
 
     const refreshFormatted = lastRefreshTime.toLocaleTimeString('pt-BR');
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
-    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Status: OK | Cotas sincronizadas: ${refreshFormatted} | Parar: Ctrl+C${C.reset}`);
+    lines.push(`${C.brightMagenta}║${C.reset}   ${C.dim}Status: OK | Sincronizado: ${refreshFormatted} | Para trocar de conta/provedor: Ctrl+C e npm start${C.reset}`);
     lines.push(`${C.brightMagenta}╠══════════════════════════════════════════════════════════════════════════════════╣${C.reset}`);
     lines.push(`${C.brightMagenta}║${C.reset}   ${C.bold}${C.brightWhite}📋 HISTÓRICO DE REQUISIÇÕES EM TEMPO REAL (Últimas 10):${C.reset}`);
 
@@ -217,5 +290,7 @@ export default {
     C,
     renderProgressBar,
     renderArrowSelectionMenu,
+    renderOpenCodeZenModelMenu,
+    renderOpenCodeZenReasoningMenu,
     renderFixedDashboardWithLogs
 };

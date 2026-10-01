@@ -8,7 +8,7 @@
  */
 
 import crypto from 'crypto';
-import { getOpenCodeZenModelMetadata, resolveOpenCodeZenModel } from './zen-client.js';
+import { getOpenCodeZenModelMetadata, resolveOpenCodeZenModel, getActiveOpenCodeZenConfig } from './zen-client.js';
 
 /**
  * Convert Anthropic Messages request to OpenCode Zen (OpenAI-compatible) payload
@@ -17,7 +17,8 @@ import { getOpenCodeZenModelMetadata, resolveOpenCodeZenModel } from './zen-clie
  * @returns {Object} OpenCode Zen API payload
  */
 export function convertAnthropicToOpenCodeZen(anthropicRequest) {
-    const requestedModel = anthropicRequest.model || 'opencode/nemotron-3.5-lightning-free';
+    const zenConfig = getActiveOpenCodeZenConfig();
+    const requestedModel = anthropicRequest.model || zenConfig.modelId || 'opencode/nemotron-3.5-lightning-free';
     const canonicalModel = resolveOpenCodeZenModel(requestedModel);
     const metadata = getOpenCodeZenModelMetadata(canonicalModel);
     const supportsImages = metadata?.supportsImages ?? false;
@@ -156,6 +157,28 @@ export function convertAnthropicToOpenCodeZen(anthropicRequest) {
         max_tokens: Math.min(anthropicRequest.max_tokens || 4096, metadata?.limit?.output || 16384),
         stream: !!anthropicRequest.stream
     };
+
+    // Configure reasoning if model supports it
+    if (metadata?.reasoning) {
+        let desiredReasoning = zenConfig.reasoning;
+        if (anthropicRequest.thinking) {
+            if (anthropicRequest.thinking.type === 'disabled') {
+                desiredReasoning = 'disabled';
+            } else if (anthropicRequest.thinking.effort) {
+                desiredReasoning = anthropicRequest.thinking.effort;
+            }
+        }
+
+        if (desiredReasoning === 'disabled') {
+            if (metadata.reasoningType === 'toggle') {
+                payload.reasoning = false;
+            }
+        } else if (metadata.reasoningType === 'effort') {
+            payload.reasoning_effort = desiredReasoning || 'medium';
+        } else if (metadata.reasoningType === 'toggle') {
+            payload.reasoning = true;
+        }
+    }
 
     if (anthropicRequest.temperature !== undefined) {
         payload.temperature = anthropicRequest.temperature;

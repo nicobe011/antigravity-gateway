@@ -5,15 +5,26 @@
  * fixed dashboard window with a scrollable 10-line request feed.
  * Account selection is purely manual on startup: no automatic account switching.
  * Supports dual provider selection: Google Antigravity & OpenCode Zen (Free Models).
+ * When selecting OpenCode Zen, allows picking the exact free model and reasoning mode.
  * Automatic quota refresh runs in the background every 30 minutes without affecting request latency.
  */
 
 import readline from 'readline';
 import app from './server.js';
-import { DEFAULT_PORT } from './constants.js';
+import { DEFAULT_PORT, OPENCODE_ZEN_FREE_MODELS } from './constants.js';
 import { logger } from './utils/logger.js';
-import { renderArrowSelectionMenu, renderFixedDashboardWithLogs } from './utils/terminal-dashboard.js';
-import { getOpenCodeZenApiKey, saveOpenCodeZenApiKey } from './opencode/zen-client.js';
+import {
+    renderArrowSelectionMenu,
+    renderOpenCodeZenModelMenu,
+    renderOpenCodeZenReasoningMenu,
+    renderFixedDashboardWithLogs
+} from './utils/terminal-dashboard.js';
+import {
+    getOpenCodeZenApiKey,
+    saveOpenCodeZenApiKey,
+    setActiveOpenCodeZenConfig,
+    getActiveOpenCodeZenConfig
+} from './opencode/zen-client.js';
 
 const args = process.argv.slice(2);
 const isDebug = args.includes('--debug') || process.env.DEBUG === 'true';
@@ -49,11 +60,15 @@ function redrawFixedDashboard() {
 
     const accountManager = app.accountManager;
     const activeEmail = accountManager?.getPinnedAccountEmail();
+    const zenConfig = getActiveOpenCodeZenConfig();
+    const zenModelMeta = OPENCODE_ZEN_FREE_MODELS.find(m => m.id === zenConfig.modelId) || OPENCODE_ZEN_FREE_MODELS[0];
 
     const screen = renderFixedDashboardWithLogs({
         port: PORT,
         activeEmail,
         activeProvider: currentProvider,
+        zenModelName: zenModelMeta?.displayName,
+        zenReasoning: zenConfig.reasoning,
         fiveHourLimit: currentQuota?.fiveHourLimit || {},
         weeklyLimit: currentQuota?.weeklyLimit || {},
         claudeLimits: currentQuota?.claudeLimits || null,
@@ -219,6 +234,153 @@ function promptInteractiveSelection(accounts, summaries, hasOpenCodeZen) {
 }
 
 /**
+ * Interactive menu to pick a specific OpenCode Zen free model
+ */
+function promptInteractiveOpenCodeZenModelSelection() {
+    return new Promise((resolve) => {
+        let selectedIndex = 0;
+        const maxIndex = OPENCODE_ZEN_FREE_MODELS.length - 1;
+
+        const renderMenu = () => {
+            console.clear();
+            const output = renderOpenCodeZenModelMenu(OPENCODE_ZEN_FREE_MODELS, selectedIndex);
+            process.stdout.write(output + '\n');
+        };
+
+        renderMenu();
+
+        readline.emitKeypressEvents(process.stdin);
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+
+        const onKeyPress = (str, key) => {
+            if (!key) return;
+
+            if (key.ctrl && key.name === 'c') {
+                process.exit(0);
+            }
+
+            if (key.name === 'up') {
+                selectedIndex = (selectedIndex - 1 + (maxIndex + 1)) % (maxIndex + 1);
+                renderMenu();
+                return;
+            }
+
+            if (key.name === 'down') {
+                selectedIndex = (selectedIndex + 1) % (maxIndex + 1);
+                renderMenu();
+                return;
+            }
+
+            if (str && /^[1-8]$/.test(str)) {
+                const num = parseInt(str, 10);
+                if (num <= OPENCODE_ZEN_FREE_MODELS.length) {
+                    selectedIndex = num - 1;
+                    renderMenu();
+                }
+                return;
+            }
+
+            if (key.name === 'return' || key.name === 'enter') {
+                cleanup();
+                resolve(OPENCODE_ZEN_FREE_MODELS[selectedIndex] || OPENCODE_ZEN_FREE_MODELS[0]);
+            }
+        };
+
+        const cleanup = () => {
+            process.stdin.removeListener('keypress', onKeyPress);
+            if (process.stdin.isTTY) {
+                process.stdin.setRawMode(false);
+            }
+        };
+
+        process.stdin.on('keypress', onKeyPress);
+    });
+}
+
+/**
+ * Interactive menu to configure reasoning for the chosen model
+ */
+function promptInteractiveOpenCodeZenReasoningSelection(model) {
+    if (!model.supportsThinking || model.reasoningType === 'none') {
+        return Promise.resolve(null);
+    }
+
+    const options = [];
+    if (model.reasoningType === 'effort') {
+        options.push({ value: 'low', label: '1. Raciocínio Leve (Low)', description: 'Pensamento rápido com baixo consumo de tokens e baixa latência.' });
+        options.push({ value: 'medium', label: '2. Raciocínio Equilibrado (Medium)', description: 'Equilíbrio ideal entre profundidade de raciocínio e velocidade (Recomendado).' });
+        options.push({ value: 'high', label: '3. Raciocínio Profundo (High)', description: 'Análise profunda e minuciosa para problemas de código complexos.' });
+        options.push({ value: 'disabled', label: '4. Desativar Raciocínio (Zero Pensamento)', description: 'Resposta imediata sem cadeia de pensamentos.' });
+    } else if (model.reasoningType === 'toggle') {
+        options.push({ value: 'enabled', label: '1. Ativar Raciocínio (Thinking Ativo)', description: 'Permite ao modelo pensar antes de responder (Recomendado).' });
+        options.push({ value: 'disabled', label: '2. Desativar Raciocínio (Desligado)', description: 'Resposta direta sem gerar blocos de pensamento.' });
+    }
+
+    return new Promise((resolve) => {
+        let selectedIndex = 0;
+        const maxIndex = options.length - 1;
+
+        const renderMenu = () => {
+            console.clear();
+            const output = renderOpenCodeZenReasoningMenu(model, selectedIndex, options);
+            process.stdout.write(output + '\n');
+        };
+
+        renderMenu();
+
+        readline.emitKeypressEvents(process.stdin);
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+
+        const onKeyPress = (str, key) => {
+            if (!key) return;
+
+            if (key.ctrl && key.name === 'c') {
+                process.exit(0);
+            }
+
+            if (key.name === 'up') {
+                selectedIndex = (selectedIndex - 1 + (maxIndex + 1)) % (maxIndex + 1);
+                renderMenu();
+                return;
+            }
+
+            if (key.name === 'down') {
+                selectedIndex = (selectedIndex + 1) % (maxIndex + 1);
+                renderMenu();
+                return;
+            }
+
+            if (str && /^[1-4]$/.test(str)) {
+                const num = parseInt(str, 10);
+                if (num <= options.length) {
+                    selectedIndex = num - 1;
+                    renderMenu();
+                }
+                return;
+            }
+
+            if (key.name === 'return' || key.name === 'enter') {
+                cleanup();
+                resolve(options[selectedIndex]?.value || null);
+            }
+        };
+
+        const cleanup = () => {
+            process.stdin.removeListener('keypress', onKeyPress);
+            if (process.stdin.isTTY) {
+                process.stdin.setRawMode(false);
+            }
+        };
+
+        process.stdin.on('keypress', onKeyPress);
+    });
+}
+
+/**
  * Prompt user for OpenCode Zen API key in terminal
  */
 function promptForOpenCodeZenApiKey() {
@@ -290,6 +452,14 @@ async function main() {
         if (!existingZenKey) {
             await promptForOpenCodeZenApiKey();
         }
+
+        // 1. Pick specific OpenCode Zen free model
+        const chosenZenModel = await promptInteractiveOpenCodeZenModelSelection();
+
+        // 2. Pick reasoning configuration if model supports it
+        const chosenReasoning = await promptInteractiveOpenCodeZenReasoningSelection(chosenZenModel);
+
+        setActiveOpenCodeZenConfig(chosenZenModel.id, chosenReasoning);
     } else {
         currentProvider = 'antigravity';
         if (selection.account) {

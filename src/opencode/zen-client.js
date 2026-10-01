@@ -21,6 +21,35 @@ import { OPENCODE_ZEN_API_BASE, OPENCODE_ZEN_CONFIG_PATH, OPENCODE_ZEN_FREE_MODE
 import { logger } from '../utils/logger.js';
 
 let cachedApiKey = null;
+let activeOpenCodeZenModelId = null; // When set, defaults requests to this chosen model
+let activeOpenCodeZenReasoning = null; // 'auto', 'disabled', or specific effort (e.g. 'high', 'medium', 'low')
+
+/**
+ * Set the user-selected active model and reasoning preference for OpenCode Zen
+ *
+ * @param {string|null} modelId - Chosen model ID or null for default
+ * @param {string|null} reasoning - 'auto', 'disabled', or specific effort
+ */
+export function setActiveOpenCodeZenConfig(modelId = null, reasoning = null) {
+    if (modelId) {
+        activeOpenCodeZenModelId = resolveOpenCodeZenModel(modelId);
+    } else {
+        activeOpenCodeZenModelId = null;
+    }
+    activeOpenCodeZenReasoning = reasoning;
+}
+
+/**
+ * Get the current active OpenCode Zen model ID and reasoning preference
+ *
+ * @returns {{modelId: string, reasoning: string|null}}
+ */
+export function getActiveOpenCodeZenConfig() {
+    return {
+        modelId: activeOpenCodeZenModelId || 'opencode/nemotron-3.5-lightning-free',
+        reasoning: activeOpenCodeZenReasoning
+    };
+}
 
 /**
  * Load OpenCode Zen API key from config file or environment
