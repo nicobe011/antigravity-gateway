@@ -772,8 +772,11 @@ app.post(['/v1/messages', '/messages'], async (req, res) => {
             });
         }
 
-        // Check if the requested model routes to OpenCode Zen
-        if (isOpenCodeZenModel(requestedModel) || isOpenCodeZenModel(backendModel)) {
+        // Check if the requested model routes to OpenCode Zen or if OpenCode Zen is the chosen provider
+        const zenConfig = getActiveOpenCodeZenConfig();
+        const isZenTarget = isOpenCodeZenModel(requestedModel) || isOpenCodeZenModel(backendModel) || (app.currentProvider === "opencode-zen");
+
+        if (isZenTarget) {
             const zenCanonical = resolveOpenCodeZenModel(requestedModel || backendModel);
             const zenMeta = getOpenCodeZenModelMetadata(zenCanonical);
             logger.info(`[API] Roteando para OpenCode Zen: ${requestedModel} -> ${zenCanonical}`);

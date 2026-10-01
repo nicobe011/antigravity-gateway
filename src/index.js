@@ -51,6 +51,7 @@ let currentQuota = null;
 let lastQuotaRefresh = new Date();
 let dashboardRefreshTimer = null;
 let currentProvider = 'antigravity'; // 'antigravity' or 'opencode-zen'
+app.currentProvider = currentProvider;
 
 /**
  * Redraw the fixed terminal dashboard screen
@@ -113,6 +114,7 @@ function startPeriodicQuotaRefresh() {
 }
 
 async function startServer() {
+    app.currentProvider = currentProvider;
     app.listen(PORT, async () => {
         const accountManager = app.accountManager;
 
@@ -449,6 +451,7 @@ async function main() {
 
     if (selection.type === 'opencode-zen') {
         currentProvider = 'opencode-zen';
+        app.currentProvider = 'opencode-zen';
         if (!existingZenKey) {
             await promptForOpenCodeZenApiKey();
         }
@@ -462,6 +465,7 @@ async function main() {
         setActiveOpenCodeZenConfig(chosenZenModel.id, chosenReasoning);
     } else {
         currentProvider = 'antigravity';
+        app.currentProvider = 'antigravity';
         if (selection.account) {
             accountManager.selectAccount(selection.account.email);
         }
