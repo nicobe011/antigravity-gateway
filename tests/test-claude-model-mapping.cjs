@@ -109,11 +109,11 @@ async function runTests() {
     console.log('6. Testing external models list for GET /v1/models...');
     const externalModels = getExternalClaudeModels();
     assert.ok(Array.isArray(externalModels));
-    assert.strictEqual(externalModels.length, 11);
+    assert.strictEqual(externalModels.length, 10);
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-low[1m]'));
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-medium[1m]'));
     assert.ok(externalModels.some(m => m.id === 'claude-opus-4-6-high[1m]'));
-    assert.ok(externalModels.some(m => m.id === 'opencode/nemotron-3.5-lightning-free'));
+    assert.ok(externalModels.some(m => m.id === 'opencode/mimo-v2.6-flash-free'));
     assert.ok(externalModels.some(m => m.id === 'opencode/muse-spark-1.3-contributor-free'));
     console.log('   ✓ External models listing includes 3 Opus 4.6 1M tiers + OpenCode Zen free models');
 

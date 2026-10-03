@@ -169,17 +169,59 @@ export const OPENCODE_ZEN_CONFIG_PATH = join(
     '.config/antigravity-gateway/opencode-zen.json'
 );
 
-// Official OpenCode Zen Free Models Catalog (from image and opencode cache)
+// Official OpenCode Zen Free Models Catalog (synced with https://opencode.ai/zen/v1/models)
+// Verificado via API ao vivo — IDs, modalities, reasoning e limit.context/output oficiais.
 export const OPENCODE_ZEN_FREE_MODELS = [
     {
-        id: 'opencode/nemotron-3.5-lightning-free',
-        displayName: 'Nemotron 3.5 Lightning Free',
-        family: 'nemotron',
+        id: 'opencode/space-bunny-free',
+        displayName: 'Space Bunny Free',
+        family: 'space-bunny',
+        supportsImages: true,
+        supportsThinking: true,
+        reasoningType: 'effort',
+        reasoningValues: ['low', 'medium', 'high', 'xhigh', 'max'],
+        contextWindow: 1048576,
+        maxTokens: 524288
+    },
+    {
+        id: 'opencode/longcat-2.5-preview-free',
+        displayName: 'LongCat 2.5 Preview Free',
+        family: 'longcat',
+        supportsImages: true,
+        supportsThinking: true,
+        reasoningType: 'toggle',
+        contextWindow: 1000000,
+        maxTokens: 131072
+    },
+    {
+        id: 'opencode/mimo-v2.6-flash-free',
+        displayName: 'MiMo-V2.6-Flash Free',
+        family: 'mimo',
+        supportsImages: true,
+        supportsThinking: true,
+        reasoningType: 'toggle',
+        contextWindow: 200000,
+        maxTokens: 32000
+    },
+    {
+        id: 'opencode/ling-3.1-flash-free',
+        displayName: 'Ling 3.1 Flash Free',
+        family: 'ling',
         supportsImages: false,
-        supportsThinking: false,
-        reasoningType: 'none',
+        supportsThinking: true,
+        reasoningType: 'toggle',
         contextWindow: 262144,
-        maxTokens: 262144
+        maxTokens: 32768
+    },
+    {
+        id: 'opencode/fledge-alpha-free',
+        displayName: 'Fledge Alpha Free',
+        family: 'fledge',
+        supportsImages: true,
+        supportsThinking: true,
+        reasoningType: 'toggle',
+        contextWindow: 1048576,
+        maxTokens: 131072
     },
     {
         id: 'opencode/muse-spark-1.3-contributor-free',
@@ -193,63 +235,12 @@ export const OPENCODE_ZEN_FREE_MODELS = [
         maxTokens: 131072
     },
     {
-        id: 'opencode/ling-3.0-flash-fin-free',
-        displayName: 'Ling 3.0 Flash Fin Free',
-        family: 'ling',
+        id: 'opencode/jev-1.13-free',
+        displayName: 'Jev 1.13 Free',
+        family: 'jev',
         supportsImages: false,
-        supportsThinking: true,
+        supportsThinking: false,
         reasoningType: 'toggle',
-        contextWindow: 262144,
-        maxTokens: 32768
-    },
-    {
-        id: 'opencode/longcat-2.5-preview-free',
-        displayName: 'LongCat 2.5 Preview Free',
-        family: 'longcat',
-        supportsImages: true,
-        supportsThinking: true,
-        reasoningType: 'toggle',
-        contextWindow: 1000000,
-        maxTokens: 131072
-    },
-    {
-        id: 'opencode/space-bunny-free',
-        displayName: 'Space Bunny Free',
-        family: 'space-bunny',
-        supportsImages: true,
-        supportsThinking: true,
-        reasoningType: 'effort',
-        reasoningValues: ['low', 'medium', 'high', 'xhigh', 'max'],
-        contextWindow: 1048576,
-        maxTokens: 524288
-    },
-    {
-        id: 'opencode/mimo-v2.6-flash-free',
-        displayName: 'MiMo-V2.6-Flash Free',
-        family: 'mimo',
-        supportsImages: true,
-        supportsThinking: false,
-        reasoningType: 'none',
-        contextWindow: 200000,
-        maxTokens: 32000
-    },
-    {
-        id: 'opencode/nemotron-3-ultra-free',
-        displayName: 'Nemotron 3 Ultra Free',
-        family: 'nemotron',
-        supportsImages: false,
-        supportsThinking: false,
-        reasoningType: 'none',
-        contextWindow: 1000000,
-        maxTokens: 128000
-    },
-    {
-        id: 'opencode/big-pickle',
-        displayName: 'Big Pickle',
-        family: 'pickle',
-        supportsImages: false,
-        supportsThinking: false,
-        reasoningType: 'none',
         contextWindow: 200000,
         maxTokens: 32000
     }

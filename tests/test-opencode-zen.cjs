@@ -23,17 +23,18 @@ async function runTests() {
 
     // 2. Model Detection and Resolution
     console.log('1. Testing OpenCode Zen model resolution...');
-    assert.strictEqual(isOpenCodeZenModel('opencode/nemotron-3.5-lightning-free'), true);
+    assert.strictEqual(isOpenCodeZenModel('opencode/mimo-v2.6-flash-free'), true);
     assert.strictEqual(isOpenCodeZenModel('opencode/muse-spark-1.3-contributor-free'), true);
-    assert.strictEqual(isOpenCodeZenModel('claude-nemotron-lightning'), false); // canonical check
-    assert.strictEqual(resolveOpenCodeZenModel('claude-nemotron-lightning'), 'opencode/nemotron-3.5-lightning-free');
+    assert.strictEqual(isOpenCodeZenModel('claude-mimo-v2.6-flash'), false); // canonical check
+    assert.strictEqual(resolveOpenCodeZenModel('claude-mimo-v2.6-flash'), 'opencode/mimo-v2.6-flash-free');
+    assert.strictEqual(resolveOpenCodeZenModel('mimo-v2.5-free'), 'opencode/mimo-v2.6-flash-free'); // legacy alias
     assert.strictEqual(resolveOpenCodeZenModel('claude-muse-spark'), 'opencode/muse-spark-1.3-contributor-free');
     console.log('   ✓ Model resolution passed');
 
-    // 3. Graceful Image Handling (Text-only model: Nemotron 3.5 Lightning Free)
+    // 3. Graceful Image Handling (Text-only model: Ling 3.1 Flash Free)
     console.log('2. Testing graceful image fallback for text-only model...');
     const nemotronReq = convertAnthropicToOpenCodeZen({
-        model: 'opencode/nemotron-3.5-lightning-free',
+        model: 'opencode/ling-3.1-flash-free',
         messages: [
             {
                 role: 'user',
